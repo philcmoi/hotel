@@ -817,45 +817,65 @@
         }
 
         loadChambres() {
-          const xhr = new XMLHttpRequest();
-          xhr.open('GET', 'reservation.php?action=get_chambres', true);
-          xhr.onreadystatechange = () => {
-            if (xhr.readyState === 4 && xhr.status === 200) {
-              try {
-                this.chambres = JSON.parse(xhr.responseText);
-                this.renderChambreSelection();
-              } catch (error) {
-                console.error("Erreur chargement chambres:", error);
-              }
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', 'reservation.php?action=get_chambres', true);
+    xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+            if (xhr.status === 200) {
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    if (response.error) {
+                        console.error("Erreur serveur:", response.error);
+                        return;
+                    }
+                    this.chambres = response;
+                    this.renderChambreSelection();
+                } catch (error) {
+                    console.error("Erreur parsing JSON:", error);
+                    console.log("Réponse brute:", xhr.responseText);
+                }
+            } else {
+                console.error("Erreur HTTP:", xhr.status);
             }
-          };
-          xhr.onerror = () => {
-            console.error("Erreur réseau lors du chargement des chambres");
-          };
-          xhr.send();
         }
+    };
+    xhr.onerror = () => {
+        console.error("Erreur réseau lors du chargement des chambres");
+    };
+    xhr.send();
+}
 
-        loadReservations() {
-          const month = this.currentDate.getMonth() + 1;
-          const year = this.currentDate.getFullYear();
-          
-          const xhr = new XMLHttpRequest();
-          xhr.open('GET', `reservation.php?action=get_reservations&month=${month}&year=${year}`, true);
-          xhr.onreadystatechange = () => {
-            if (xhr.readyState === 4 && xhr.status === 200) {
-              try {
-                const reservations = JSON.parse(xhr.responseText);
-                this.displayReservations(reservations);
-              } catch (error) {
-                console.error("Erreur chargement réservations:", error);
-              }
+loadReservations() {
+    const month = this.currentDate.getMonth() + 1;
+    const year = this.currentDate.getFullYear();
+    
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', `reservation.php?action=get_reservations&month=${month}&year=${year}`, true);
+    xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+            if (xhr.status === 200) {
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    if (response.error) {
+                        console.error("Erreur serveur:", response.error);
+                        return;
+                    }
+                    this.displayReservations(response);
+                } catch (error) {
+                    console.error("Erreur parsing JSON:", error);
+                    console.log("Réponse brute:", xhr.responseText);
+                }
+            } else {
+                console.error("Erreur HTTP:", xhr.status);
             }
-          };
-          xhr.onerror = () => {
-            console.error("Erreur réseau lors du chargement des réservations");
-          };
-          xhr.send();
         }
+    };
+    xhr.onerror = () => {
+        console.error("Erreur réseau lors du chargement des réservations");
+    };
+    xhr.send();
+}
+
 
 
         displayReservations(reservations) {
@@ -1071,10 +1091,22 @@ function differenceEnJours(date1, date2) {
 
     
         try {
-          const response = await fetch(
+        const response = await fetch(
             `reservation.php?action=check_availability&date_arrivee=${dateArrivee}&date_depart=${dateDepart}`
-          );
-          const availableChambres = await response.json();
+        );
+        if (!response.ok) {
+            throw new Error(`Erreur HTTP: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Vérifier si c'est une erreur
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        const availableChambres = data;
+          //const availableChambres = await response.json();
 
           const resultDiv = document.getElementById("availability-result");
           const chambreCards = document.querySelectorAll(".chambre-card");
