@@ -1,8 +1,6 @@
 <?php
-require_once 'config.php';
-require_once 'auth.php';
-
-$auth = new Auth();
-$auth->logout();
-redirect('login.php');
-?>
+session_start();
+session_unset();
+session_destroy();
+header('Location: login.php');
+exit;

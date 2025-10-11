@@ -1,13 +1,1085 @@
-
 <?php
 require_once 'config.php';
-
-// Vérifier l'authentification
-if (!isLoggedIn()) {
-    header('Location: login.php');
-    exit;
-}
-
-// Afficher l'interface d'administration
-readfile('_admin.html');
+requireAuth();
 ?>
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Administration des Réservations</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Arial", sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .admin-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        overflow: hidden;
+      }
+
+      .admin-header {
+        background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+        color: white;
+        padding: 2rem;
+        text-align: center;
+      }
+
+      .admin-nav {
+        background: #34495e;
+        padding: 1rem;
+      }
+
+      .admin-nav button {
+        background: #3498db;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        margin: 0 5px;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: background 0.3s;
+      }
+
+      .admin-nav button:hover {
+        background: #2980b9;
+      }
+
+      .content-section {
+        padding: 2rem;
+        display: none;
+      }
+
+      .content-section.active {
+        display: block;
+      }
+
+      /* Table Styles */
+      .reservations-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1rem;
+        background: white;
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+      }
+
+      .reservations-table th,
+      .reservations-table td {
+        padding: 12px 15px;
+        text-align: left;
+        border-bottom: 1px solid #ecf0f1;
+      }
+
+      .reservations-table th {
+        background: #34495e;
+        color: white;
+        font-weight: 600;
+      }
+
+      .reservations-table tr:hover {
+        background: #f8f9fa;
+      }
+
+      .status-confirme {
+        background: #d4edda;
+        color: #155724;
+        padding: 4px 8px;
+        border-radius: 3px;
+      }
+      .status-attente {
+        background: #fff3cd;
+        color: #856404;
+        padding: 4px 8px;
+        border-radius: 3px;
+      }
+      .status-annulee {
+        background: #f8d7da;
+        color: #721c24;
+        padding: 4px 8px;
+        border-radius: 3px;
+      }
+
+      /* Form Styles */
+      .form-container {
+        background: #f8f9fa;
+        padding: 2rem;
+        border-radius: 10px;
+        margin-top: 1rem;
+      }
+
+      .form-group {
+        margin-bottom: 1rem;
+      }
+
+      .form-group label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: bold;
+        color: #2c3e50;
+      }
+
+      .form-group input,
+      .form-group select,
+      .form-group textarea {
+        width: 100%;
+        padding: 10px;
+        border: 2px solid #bdc3c7;
+        border-radius: 5px;
+        font-size: 1em;
+        transition: border-color 0.3s;
+      }
+
+      .form-group input:focus,
+      .form-group select:focus,
+      .form-group textarea:focus {
+        border-color: #3498db;
+        outline: none;
+      }
+
+      .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 1em;
+        margin-right: 10px;
+        transition: all 0.3s;
+      }
+
+      .btn-primary {
+        background: #3498db;
+        color: white;
+      }
+      .btn-success {
+        background: #27ae60;
+        color: white;
+      }
+      .btn-warning {
+        background: #f39c12;
+        color: white;
+      }
+      .btn-danger {
+        background: #e74c3c;
+        color: white;
+      }
+      .btn-secondary {
+        background: #95a5a6;
+        color: white;
+      }
+
+      .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+      }
+
+      .action-buttons {
+        display: flex;
+        gap: 5px;
+      }
+
+      .action-btn {
+        padding: 5px 10px;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 0.8em;
+      }
+
+      /* Modal */
+      .modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+      }
+
+      .modal-content {
+        background: white;
+        padding: 2rem;
+        border-radius: 10px;
+        max-width: 600px;
+        width: 90%;
+        max-height: 80vh;
+        overflow-y: auto;
+      }
+
+      .chambre-selection {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin: 1rem 0;
+      }
+
+      .chambre-card {
+        border: 2px solid #bdc3c7;
+        padding: 1rem;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: all 0.3s;
+      }
+
+      .chambre-card.selected {
+        border-color: #3498db;
+        background: #ebf5fb;
+      }
+
+      .search-filters {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1rem;
+        padding: 1rem;
+        background: #ecf0f1;
+        border-radius: 5px;
+      }
+
+      .stats-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+      }
+
+      .stat-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        text-align: center;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+      }
+
+      .stat-number {
+        font-size: 2em;
+        font-weight: bold;
+        color: #2c3e50;
+      }
+
+      .stat-label {
+        color: #7f8c8d;
+        margin-top: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="admin-container">
+      <div class="admin-header">
+        <h1>🏨 Administration des Réservations</h1>
+        <p>Gestion complète des réservations de l'hôtel</p>
+      </div>
+
+      <div class="admin-nav">
+        <button onclick="showSection('dashboard')">📊 Tableau de bord</button>
+        <button onclick="showSection('list')">📋 Liste des réservations</button>
+        <button onclick="showSection('create')">➕ Nouvelle réservation</button>
+        <button onclick="showSection('calendar')">📅 Calendrier</button>
+      </div>
+
+      <!-- Tableau de bord -->
+      <div id="dashboard" class="content-section active">
+        <h2>Tableau de bord</h2>
+        <div class="stats-cards">
+          <div class="stat-card">
+            <div class="stat-number" id="total-reservations">0</div>
+            <div class="stat-label">Total Réservations</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" id="pending-reservations">0</div>
+            <div class="stat-label">En attente</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" id="confirmed-reservations">0</div>
+            <div class="stat-label">Confirmées</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" id="revenue">0€</div>
+            <div class="stat-label">Chiffre d'affaires</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Liste des réservations -->
+      <div id="list" class="content-section">
+        <h2>Liste des réservations</h2>
+
+        <div class="search-filters">
+          <input
+            type="text"
+            id="search-input"
+            placeholder="Rechercher par nom, email..."
+          />
+          <select id="status-filter">
+            <option value="">Tous les statuts</option>
+            <option value="en attente">En attente</option>
+            <option value="confirme">Confirmé</option>
+            <option value="annulee">Annulé</option>
+          </select>
+          <input type="date" id="date-filter" />
+          <button class="btn btn-primary" onclick="loadReservations()">
+            🔍 Filtrer
+          </button>
+          <button class="btn btn-secondary" onclick="resetFilters()">
+            🔄 Réinitialiser
+          </button>
+        </div>
+
+        <div class="table-container">
+          <table class="reservations-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Client</th>
+                <th>Dates</th>
+                <th>Chambres</th>
+                <th>Personnes</th>
+                <th>Prix total</th>
+                <th>Statut</th>
+                <th>Date réservation</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="reservations-table-body">
+              <!-- Les réservations seront chargées ici -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Création de réservation -->
+      <div id="create" class="content-section">
+        <h2>Nouvelle réservation</h2>
+        <div class="form-container">
+          <form id="create-reservation-form">
+            <div
+              style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px"
+            >
+              <div>
+                <h3>Informations du séjour</h3>
+                <div class="form-group">
+                  <label>Date d'arrivée *</label>
+                  <input type="date" id="create-date-arrivee" required />
+                </div>
+                <div class="form-group">
+                  <label>Date de départ *</label>
+                  <input type="date" id="create-date-depart" required />
+                </div>
+                <div class="form-group">
+                  <label>Nombre de personnes *</label>
+                  <input
+                    type="number"
+                    id="create-nombre-personnes"
+                    min="1"
+                    required
+                  />
+                </div>
+                <div class="form-group">
+                  <button
+                    type="button"
+                    class="btn btn-primary"
+                    onclick="checkAvailabilityForCreate()"
+                  >
+                    Vérifier la disponibilité
+                  </button>
+                </div>
+                <div id="availability-result-create"></div>
+                <div class="form-group">
+                  <label>Chambres disponibles</label>
+                  <div id="chambre-selection-create" class="chambre-selection">
+                    <!-- Chambres chargées dynamiquement -->
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3>Informations client</h3>
+                <div class="form-group">
+                  <label>Nom *</label>
+                  <input type="text" id="create-nom" required />
+                </div>
+                <div class="form-group">
+                  <label>Prénom *</label>
+                  <input type="text" id="create-prenom" required />
+                </div>
+                <div class="form-group">
+                  <label>Email *</label>
+                  <input type="email" id="create-email" required />
+                </div>
+                <div class="form-group">
+                  <label>Téléphone *</label>
+                  <input type="tel" id="create-telephone" required />
+                </div>
+                <div class="form-group">
+                  <label>Adresse *</label>
+                  <textarea id="create-adresse" rows="3" required></textarea>
+                </div>
+                <div class="form-group">
+                  <label>Commentaire</label>
+                  <textarea id="create-commentaire" rows="3"></textarea>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <button type="submit" class="btn btn-success">
+                Créer la réservation
+              </button>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                onclick="resetCreateForm()"
+              >
+                Annuler
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Calendrier -->
+      <div id="calendar" class="content-section">
+        <h2>Calendrier des réservations</h2>
+        <div id="calendar-container">
+          <!-- Le calendrier sera généré ici -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal pour modifier une réservation -->
+    <div id="edit-modal" class="modal">
+      <div class="modal-content">
+        <h3>Modifier la réservation</h3>
+        <form id="edit-reservation-form">
+          <input type="hidden" id="edit-reservation-id" />
+          <div class="form-group">
+            <label>Statut</label>
+            <select id="edit-statut" required>
+              <option value="en attente">En attente</option>
+              <option value="confirme">Confirmé</option>
+              <option value="annulee">Annulé</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Date d'arrivée</label>
+            <input type="date" id="edit-date-arrivee" required />
+          </div>
+          <div class="form-group">
+            <label>Date de départ</label>
+            <input type="date" id="edit-date-depart" required />
+          </div>
+          <div class="form-group">
+            <label>Nombre de personnes</label>
+            <input type="number" id="edit-nombre-personnes" min="1" required />
+          </div>
+          <div class="form-group">
+            <label>Commentaire</label>
+            <textarea id="edit-commentaire" rows="3"></textarea>
+          </div>
+          <div class="form-group">
+            <button type="submit" class="btn btn-success">Enregistrer</button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              onclick="closeEditModal()"
+            >
+              Annuler
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      // Variables globales
+      let allReservations = [];
+      let selectedChambres = [];
+
+      // Navigation
+      function showSection(sectionId) {
+        document.querySelectorAll(".content-section").forEach((section) => {
+          section.classList.remove("active");
+        });
+        document.getElementById(sectionId).classList.add("active");
+      }
+
+      // Chargement des données
+      /*async function loadReservations() {
+        try {
+          const response = await fetch("admin-reservations.php?action=get_all");
+          const result = await response.json();
+
+          if (result.success) {
+            allReservations = result.data;
+            displayReservations(allReservations);
+            updateDashboardStats(result.data);
+          } else {
+            alert("Erreur: " + result.error);
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          alert("Erreur lors du chargement des réservations");
+        }
+      }
+*/
+
+      async function loadReservations() {
+        try {
+          const response = await fetch("admin-reservations.php?action=get_all");
+          const result = await response.json();
+
+          if (result.success) {
+            allReservations = result.data;
+            displayReservations(allReservations);
+            updateDashboardStats(result.data);
+          } else {
+            if (!handleAuthError(result.error)) {
+              alert("Erreur: " + result.error);
+            }
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          if (!handleAuthError(error.message)) {
+            alert("Erreur lors du chargement des réservations");
+          }
+        }
+      }
+
+      function displayReservations(reservations) {
+        const tbody = document.getElementById("reservations-table-body");
+        tbody.innerHTML = "";
+
+        reservations.forEach((reservation) => {
+          const tr = document.createElement("tr");
+          const statusClass = `status-${reservation.etat_reservation.replace(
+            " ",
+            "-"
+          )}`;
+
+          // Boutons d'action selon le statut actuel
+          let actionButtons = "";
+
+          if (reservation.etat_reservation === "en attente") {
+            actionButtons = `
+                <button class="action-btn btn-success" onclick="changeStatus(${reservation.idReservation}, 'confirme')">✅ Confirmer</button>
+                <button class="action-btn btn-danger" onclick="changeStatus(${reservation.idReservation}, 'annule')">❌ Annuler</button>
+            `;
+          } else if (reservation.etat_reservation === "confirme") {
+            actionButtons = `
+                <button class="action-btn btn-primary" onclick="changeStatus(${reservation.idReservation}, 'en cours')">🏁 Débuter</button>
+                <button class="action-btn btn-danger" onclick="changeStatus(${reservation.idReservation}, 'annule')">❌ Annuler</button>
+            `;
+          } else if (reservation.etat_reservation === "en cours") {
+            actionButtons = `
+                <button class="action-btn btn-success" onclick="changeStatus(${reservation.idReservation}, 'termine')">✅ Terminer</button>
+            `;
+          } else {
+            actionButtons = `
+                <button class="action-btn btn-secondary" onclick="changeStatus(${reservation.idReservation}, 'en attente')">↩️ Remettre en attente</button>
+            `;
+          }
+
+          tr.innerHTML = `
+            <td>#${reservation.idReservation}</td>
+            <td>${reservation.prenom} ${reservation.nom}<br><small>${
+            reservation.email
+          }</small></td>
+            <td>${formatDate(reservation.date_arrivee)}<br>au<br>${formatDate(
+            reservation.date_depart
+          )}</td>
+            <td>${reservation.chambres || "N/A"}</td>
+            <td>${reservation.nombre_personnes}</td>
+            <td>${reservation.prix_total}€</td>
+            <td><span class="${statusClass}">${
+            reservation.etat_reservation
+          }</span></td>
+            <td>${formatDateTime(reservation.date_reservation)}</td>
+            <td>
+                <div class="action-buttons">
+                    <button class="action-btn btn-primary" onclick="editReservation(${
+                      reservation.idReservation
+                    })">✏️</button>
+                    ${actionButtons}
+                    <button class="action-btn btn-danger" onclick="deleteReservation(${
+                      reservation.idReservation
+                    })">🗑️</button>
+                </div>
+            </td>
+        `;
+          tbody.appendChild(tr);
+        });
+      }
+
+      // Fonction pour changer le statut
+      /* function changeStatus(reservationId, newStatus) {
+        const statusLabels = {
+          "en attente": "en attente",
+          confirme: "confirmée",
+          "en cours": "en cours",
+          termine: "terminée",
+          annule: "annulée",
+        };
+
+        if (
+          !confirm(
+            `Êtes-vous sûr de vouloir changer le statut de cette réservation en "${statusLabels[newStatus]}" ?`
+          )
+        ) {
+          return;
+        }
+
+        fetch(
+          `admin-reservations.php?action=update_status&id=${reservationId}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              status: newStatus,
+            }),
+          }
+        )
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              alert("Statut mis à jour avec succès");
+              loadReservations(); // Recharger la liste
+            } else {
+              alert("Erreur: " + data.error);
+            }
+          })
+          .catch((error) => {
+            console.error("Erreur:", error);
+            alert("Erreur lors de la mise à jour du statut");
+          });
+      } */
+
+      function changeStatus(reservationId, newStatus) {
+        const statusLabels = {
+          "en attente": "en attente",
+          confirme: "confirmée",
+          "en cours": "en cours",
+          termine: "terminée",
+          annule: "annulée",
+        };
+
+        if (
+          !confirm(
+            `Êtes-vous sûr de vouloir changer le statut de cette réservation en "${statusLabels[newStatus]}" ?`
+          )
+        ) {
+          return;
+        }
+
+        fetch(
+          `admin-reservations.php?action=update_status&id=${reservationId}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              status: newStatus,
+            }),
+          }
+        )
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              alert("Statut mis à jour avec succès");
+              loadReservations();
+            } else {
+              if (!handleAuthError(data.error)) {
+                alert("Erreur: " + data.error);
+              }
+            }
+          })
+          .catch((error) => {
+            console.error("Erreur:", error);
+            if (!handleAuthError(error.message)) {
+              alert("Erreur lors de la mise à jour du statut");
+            }
+          });
+      }
+
+      function updateDashboardStats(reservations) {
+        const total = reservations.length;
+        const pending = reservations.filter(
+          (r) => r.etat_reservation === "en attente"
+        ).length;
+        const confirmed = reservations.filter(
+          (r) => r.etat_reservation === "confirme"
+        ).length;
+        const revenue = reservations.reduce(
+          (sum, r) => sum + parseFloat(r.prix_total),
+          0
+        );
+
+        document.getElementById("total-reservations").textContent = total;
+        document.getElementById("pending-reservations").textContent = pending;
+        document.getElementById("confirmed-reservations").textContent =
+          confirmed;
+        document.getElementById("revenue").textContent =
+          revenue.toFixed(2) + "€";
+      }
+
+      // Gestion des formulaires
+      document
+        .getElementById("create-reservation-form")
+        .addEventListener("submit", async function (e) {
+          e.preventDefault();
+          await createReservation();
+        });
+
+      document
+        .getElementById("edit-reservation-form")
+        .addEventListener("submit", async function (e) {
+          e.preventDefault();
+          await updateReservation();
+        });
+
+      /*async function createReservation() {
+        const formData = {
+          nom: document.getElementById("create-nom").value,
+          prenom: document.getElementById("create-prenom").value,
+          email: document.getElementById("create-email").value,
+          telephone: document.getElementById("create-telephone").value,
+          adresse: document.getElementById("create-adresse").value,
+          date_arrivee: document.getElementById("create-date-arrivee").value,
+          date_depart: document.getElementById("create-date-depart").value,
+          nombre_personnes: document.getElementById("create-nombre-personnes")
+            .value,
+          commentaire: document.getElementById("create-commentaire").value,
+          chambres: selectedChambres,
+        };
+
+        try {
+          const response = await fetch("admin-reservations.php?action=create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(formData),
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            alert(
+              "Réservation créée avec succès! ID: " + result.reservation_id
+            );
+            resetCreateForm();
+            loadReservations();
+            showSection("list");
+          } else {
+            alert("Erreur: " + result.error);
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          alert("Erreur lors de la création de la réservation");
+        }
+      }*/
+
+      async function createReservation() {
+        const formData = {
+          nom: document.getElementById("create-nom").value,
+          prenom: document.getElementById("create-prenom").value,
+          email: document.getElementById("create-email").value,
+          telephone: document.getElementById("create-telephone").value,
+          adresse: document.getElementById("create-adresse").value,
+          date_arrivee: document.getElementById("create-date-arrivee").value,
+          date_depart: document.getElementById("create-date-depart").value,
+          nombre_personnes: document.getElementById("create-nombre-personnes")
+            .value,
+          commentaire: document.getElementById("create-commentaire").value,
+          chambres: selectedChambres,
+        };
+
+        try {
+          const response = await fetch("admin-reservations.php?action=create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(formData),
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            alert(
+              "Réservation créée avec succès! ID: " + result.reservation_id
+            );
+            resetCreateForm();
+            loadReservations();
+            showSection("list");
+          } else {
+            if (!handleAuthError(result.error)) {
+              alert("Erreur: " + result.error);
+            }
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          if (!handleAuthError(error.message)) {
+            alert("Erreur lors de la création de la réservation");
+          }
+        }
+      }
+
+      async function editReservation(id) {
+        try {
+          const response = await fetch(
+            `admin-reservations.php?action=get&id=${id}`
+          );
+          const result = await response.json();
+
+          if (result.success) {
+            const reservation = result.data.reservation;
+            document.getElementById("edit-reservation-id").value =
+              reservation.idReservation;
+            document.getElementById("edit-statut").value =
+              reservation.etat_reservation;
+            document.getElementById("edit-date-arrivee").value =
+              reservation.date_arrivee;
+            document.getElementById("edit-date-depart").value =
+              reservation.date_depart;
+            document.getElementById("edit-nombre-personnes").value =
+              reservation.nombre_personnes;
+            document.getElementById("edit-commentaire").value =
+              reservation.commentaire || "";
+
+            document.getElementById("edit-modal").style.display = "flex";
+          } else {
+            alert("Erreur: " + result.error);
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          alert("Erreur lors du chargement de la réservation");
+        }
+      }
+
+      async function updateReservation() {
+        const id = document.getElementById("edit-reservation-id").value;
+        const formData = {
+          etat_reservation: document.getElementById("edit-statut").value,
+          date_arrivee: document.getElementById("edit-date-arrivee").value,
+          date_depart: document.getElementById("edit-date-depart").value,
+          nombre_personnes: document.getElementById("edit-nombre-personnes")
+            .value,
+          commentaire: document.getElementById("edit-commentaire").value,
+        };
+
+        try {
+          const response = await fetch(
+            `admin-reservations.php?action=update&id=${id}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(formData),
+            }
+          );
+
+          const result = await response.json();
+
+          if (result.success) {
+            alert("Réservation mise à jour avec succès!");
+            closeEditModal();
+            loadReservations();
+          } else {
+            alert("Erreur: " + result.error);
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          alert("Erreur lors de la mise à jour de la réservation");
+        }
+      }
+
+      /*async function deleteReservation(id) {
+        if (!confirm("Êtes-vous sûr de vouloir supprimer cette réservation ?"))
+          return;
+
+        try {
+          const response = await fetch(
+            `admin-reservations.php?action=delete&id=${id}`,
+            {
+              method: "DELETE",
+            }
+          );
+
+          const result = await response.json();
+
+          if (result.success) {
+            alert("Réservation supprimée avec succès!");
+            loadReservations();
+          } else {
+            alert("Erreur: " + result.error);
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          alert("Erreur lors de la suppression de la réservation");
+        }
+      }*/
+
+      async function deleteReservation(id) {
+        if (!confirm("Êtes-vous sûr de vouloir supprimer cette réservation ?"))
+          return;
+
+        try {
+          const response = await fetch(
+            `admin-reservations.php?action=delete&id=${id}`,
+            {
+              method: "DELETE",
+            }
+          );
+
+          const result = await response.json();
+
+          if (result.success) {
+            alert("Réservation supprimée avec succès!");
+            loadReservations();
+          } else {
+            if (!handleAuthError(result.error)) {
+              alert("Erreur: " + result.error);
+            }
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          if (!handleAuthError(error.message)) {
+            alert("Erreur lors de la suppression de la réservation");
+          }
+        }
+      }
+
+      // Gestion de la disponibilité
+      async function checkAvailabilityForCreate() {
+        const dateArrivee = document.getElementById(
+          "create-date-arrivee"
+        ).value;
+        const dateDepart = document.getElementById("create-date-depart").value;
+
+        if (!dateArrivee || !dateDepart) {
+          alert("Veuillez sélectionner les dates");
+          return;
+        }
+
+        try {
+          const response = await fetch(
+            `admin-reservations.php?action=check_availability&date_arrivee=${dateArrivee}&date_depart=${dateDepart}`
+          );
+          const result = await response.json();
+
+          const resultDiv = document.getElementById(
+            "availability-result-create"
+          );
+          const container = document.getElementById("chambre-selection-create");
+
+          if (result.success && result.data.length > 0) {
+            resultDiv.className = "availability-result available";
+            resultDiv.innerHTML = `<strong>Chambres disponibles:</strong> ${result.data.length} chambre(s) trouvée(s)`;
+            resultDiv.style.display = "block";
+
+            container.innerHTML = result.data
+              .map(
+                (chambre) => `
+                        <div class="chambre-card" data-id="${chambre.idChambre}" onclick="toggleChambreSelection(${chambre.idChambre})">
+                            <h4>Chambre ${chambre.numeroChambre}</h4>
+                            <p>Type: ${chambre.type_chambre}</p>
+                            <p>Capacité: ${chambre.capacite} personnes</p>
+                            <p>Prix: ${chambre.prix_nuit}€/nuit</p>
+                        </div>
+                    `
+              )
+              .join("");
+          } else {
+            resultDiv.className = "availability-result unavailable";
+            resultDiv.innerHTML = "Aucune chambre disponible pour ces dates";
+            resultDiv.style.display = "block";
+            container.innerHTML = "";
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          alert("Erreur lors de la vérification de disponibilité");
+        }
+      }
+
+      function toggleChambreSelection(chambreId) {
+        const card = document.querySelector(`[data-id="${chambreId}"]`);
+        const index = selectedChambres.indexOf(chambreId);
+
+        if (index > -1) {
+          selectedChambres.splice(index, 1);
+          card.classList.remove("selected");
+        } else {
+          selectedChambres.push(chambreId);
+          card.classList.add("selected");
+        }
+      }
+
+      // Utilitaires
+      function formatDate(dateString) {
+        return new Date(dateString).toLocaleDateString("fr-FR");
+      }
+
+      function formatDateTime(dateTimeString) {
+        return new Date(dateTimeString).toLocaleString("fr-FR");
+      }
+
+      function resetCreateForm() {
+        document.getElementById("create-reservation-form").reset();
+        document.getElementById("chambre-selection-create").innerHTML = "";
+        document.getElementById("availability-result-create").style.display =
+          "none";
+        selectedChambres = [];
+      }
+
+      function closeEditModal() {
+        document.getElementById("edit-modal").style.display = "none";
+      }
+
+      function resetFilters() {
+        document.getElementById("search-input").value = "";
+        document.getElementById("status-filter").value = "";
+        document.getElementById("date-filter").value = "";
+        loadReservations();
+      }
+
+      // Initialisation
+      document.addEventListener("DOMContentLoaded", function () {
+        loadReservations();
+        // Définir les dates min pour les champs date
+        const today = new Date().toISOString().split("T")[0];
+        document.getElementById("create-date-arrivee").min = today;
+        document.getElementById("create-date-depart").min = today;
+      });
+
+      // Gestion des erreurs d'authentification
+      function handleAuthError(error) {
+        if (
+          error.includes("Authentification") ||
+          error.includes("Non authentifié") ||
+          error.includes("401")
+        ) {
+          alert("Session expirée. Redirection vers la page de connexion...");
+          window.location.href = "login.php";
+          return true;
+        }
+        return false;
+      }
+    </script>
+  </body>
+</html>
