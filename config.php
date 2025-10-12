@@ -4,6 +4,9 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+$_SESSION['admin_logged_in'] = true; // TEMPORAIRE - à retirer après test
+
+
 // Configuration de la base de données
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'hotel');
