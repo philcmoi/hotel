@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gestion des Chambres - Hôtel</title>
+    <style>
+      :root {
+        --primary: #4361ee;
+        --primary-dark: #3a56d4;
+        --secondary: #7209b7;
+        --success: #4cc9f0;
+        --warning: #f72585;
+        --light: #f8f9fa;
+        --dark: #212529;
+        --gray: #6c757d;
+        --border: #dee2e6;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+
+      body {
+        background-color: #f5f7fb;
+        color: var(--dark);
+        line-height: 1.6;
+      }
+
+      .admin-container {
+        display: flex;
+        min-height: 100vh;
+      }
+
+      /* Sidebar */
+      .sidebar {
+        width: 250px;
+        background: linear-gradient(
+          135deg,
+          var(--primary) 0%,
+          var(--secondary) 100%
+        );
+        color: white;
+        padding: 20px 0;
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+        z-index: 100;
+      }
+
+      .logo {
+        padding: 0 20px 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        margin-bottom: 20px;
+      }
+
+      .logo h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+      }
+
+      .logo span {
+        color: var(--success);
+      }
+
+      .nav-links {
+        list-style: none;
+      }
+
+      .nav-links li {
+        padding: 12px 20px;
+        transition: all 0.3s ease;
+      }
+
+      .nav-links li:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+      }
+
+      .nav-links li.active {
+        background-color: rgba(255, 255, 255, 0.2);
+        border-left: 4px solid var(--success);
+      }
+
+      .nav-links a {
+        color: white;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .nav-links i {
+        font-size: 1.2rem;
+      }
+
+      /* Main Content */
+      .main-content {
+        flex: 1;
+        padding: 20px;
+        overflow-y: auto;
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .header h2 {
+        font-size: 1.8rem;
+        font-weight: 600;
+        color: var(--dark);
+      }
+
+      .user-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .user-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background-color: var(--primary);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+      }
+
+      /* Stats Cards */
+      .stats-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+      }
+
+      .stat-card {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.3s ease;
+      }
+
+      .stat-card:hover {
+        transform: translateY(-5px);
+      }
+
+      .stat-card.total {
+        border-top: 4px solid #4361ee;
+      }
+
+      .stat-card.available {
+        border-top: 4px solid #4cc9f0;
+      }
+
+      .stat-card.occupied {
+        border-top: 4px solid #f72585;
+      }
+
+      .stat-card.maintenance {
+        border-top: 4px solid #6c757d;
+      }
+
+      .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        margin: 10px 0;
+      }
+
+      .stat-label {
+        color: var(--gray);
+        font-size: 0.9rem;
+      }
+
+      .stat-trend {
+        font-size: 0.8rem;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin-top: 5px;
+      }
+
+      .stat-trend.positive {
+        color: #2ed573;
+      }
+
+      .stat-trend.negative {
+        color: #ff4757;
+      }
+
+      /* Filters */
+      .filters {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        align-items: center;
+      }
+
+      .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+
+      .filter-group label {
+        font-size: 0.85rem;
+        color: var(--gray);
+        font-weight: 500;
+      }
+
+      .filter-select,
+      .filter-input {
+        padding: 8px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 0.9rem;
+        background: white;
+      }
+
+      .search-box {
+        display: flex;
+        align-items: center;
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 0 10px;
+        margin-left: auto;
+        flex: 1;
+        max-width: 300px;
+      }
+
+      .search-box input {
+        border: none;
+        padding: 8px 10px;
+        outline: none;
+        width: 100%;
+        background: transparent;
+      }
+
+      .search-box i {
+        color: var(--gray);
+      }
+
+      /* Chambres Table */
+      .chambres-table-container {
+        background: white;
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+      }
+
+      .table-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .table-header h3 {
+        font-size: 1.3rem;
+        font-weight: 600;
+      }
+
+      .table-actions {
+        display: flex;
+        gap: 10px;
+      }
+
+      .btn {
+        padding: 8px 15px;
+        border: none;
+        border-radius: 6px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        text-decoration: none;
+        font-size: 0.9rem;
+      }
+
+      .btn-primary {
+        background-color: var(--primary);
+        color: white;
+      }
+
+      .btn-primary:hover {
+        background-color: var(--primary-dark);
+      }
+
+      .btn-outline {
+        background-color: transparent;
+        border: 1px solid var(--border);
+        color: var(--dark);
+      }
+
+      .btn-outline:hover {
+        background-color: #f8f9fa;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th {
+        background-color: #f8f9fa;
+        padding: 15px;
+        text-align: left;
+        font-weight: 600;
+        color: var(--dark);
+        border-bottom: 1px solid var(--border);
+      }
+
+      td {
+        padding: 15px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      tr:last-child td {
+        border-bottom: none;
+      }
+
+      tr:hover {
+        background-color: #f8f9fa;
+      }
+
+      .chambre-id {
+        font-weight: 600;
+        color: var(--primary);
+      }
+
+      .chambre-info {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .chambre-numero {
+        font-weight: 600;
+      }
+
+      .chambre-type {
+        font-size: 0.85rem;
+        color: var(--gray);
+      }
+
+      .status {
+        padding: 5px 10px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        text-align: center;
+        display: inline-block;
+      }
+
+      .status.available {
+        background-color: rgba(76, 201, 240, 0.1);
+        color: #4cc9f0;
+      }
+
+      .status.occupied {
+        background-color: rgba(247, 37, 133, 0.1);
+        color: #f72585;
+      }
+
+      .status.maintenance {
+        background-color: rgba(108, 117, 125, 0.1);
+        color: #6c757d;
+      }
+
+      .price {
+        font-weight: 600;
+        color: var(--dark);
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .action-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--gray);
+        transition: color 0.3s ease;
+        font-size: 1.1rem;
+        padding: 5px;
+        border-radius: 4px;
+      }
+
+      .action-btn:hover {
+        color: var(--primary);
+        background-color: rgba(67, 97, 238, 0.1);
+      }
+
+      .reservation-list {
+        max-height: 150px;
+        overflow-y: auto;
+      }
+
+      .reservation-item {
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+      }
+
+      .reservation-item:last-child {
+        border-bottom: none;
+      }
+
+      .reservation-dates {
+        font-weight: 600;
+        font-size: 0.9rem;
+      }
+
+      .reservation-client {
+        font-size: 0.8rem;
+        color: var(--gray);
+      }
+
+      /* Modal */
+      .modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .modal-content {
+        background: white;
+        border-radius: 10px;
+        width: 90%;
+        max-width: 500px;
+        max-height: 90vh;
+        overflow-y: auto;
+      }
+
+      .modal-header {
+        padding: 20px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .modal-header h3 {
+        margin: 0;
+      }
+
+      .modal-body {
+        padding: 20px;
+      }
+
+      .modal-footer {
+        padding: 20px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+      }
+
+      .close-btn {
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        cursor: pointer;
+        color: var(--gray);
+      }
+
+      .form-group {
+        margin-bottom: 15px;
+      }
+
+      .form-group label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: 500;
+        color: var(--dark);
+      }
+
+      .form-control {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 0.9rem;
+      }
+
+      .form-control:focus {
+        outline: none;
+        border-color: var(--primary);
+      }
+
+      /* Pagination */
+      .pagination {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px;
+        border-top: 1px solid var(--border);
+      }
+
+      .pagination-info {
+        color: var(--gray);
+        font-size: 0.9rem;
+      }
+
+      .pagination-controls {
+        display: flex;
+        gap: 5px;
+      }
+
+      .page-btn {
+        width: 35px;
+        height: 35px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--border);
+        background: white;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: 0.9rem;
+      }
+
+      .page-btn.active {
+        background-color: var(--primary);
+        color: white;
+        border-color: var(--primary);
+      }
+
+      .page-btn:hover:not(.active) {
+        background-color: #f8f9fa;
+      }
+
+      /* Loading State */
+      .loading {
+        opacity: 0.6;
+        pointer-events: none;
+      }
+
+      .loading-spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: #fff;
+        animation: spin 1s ease-in-out infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* Messages */
+      .error-message {
+        background-color: #ff4757;
+        color: white;
+        padding: 10px 15px;
+        border-radius: 5px;
+        margin-bottom: 20px;
+        display: none;
+      }
+
+      .success-message {
+        background-color: #2ed573;
+        color: white;
+        padding: 10px 15px;
+        border-radius: 5px;
+        margin-bottom: 20px;
+        display: none;
+      }
+
+      /* Responsive */
+      @media (max-width: 992px) {
+        .admin-container {
+          flex-direction: column;
+        }
+
+        .sidebar {
+          width: 100%;
+          height: auto;
+        }
+
+        .nav-links {
+          display: flex;
+          overflow-x: auto;
+        }
+
+        .nav-links li {
+          white-space: nowrap;
+        }
+      }
+
+      @media (max-width: 768px) {
+        .filters {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .search-box {
+          margin-left: 0;
+          width: 100%;
+          max-width: none;
+        }
+
+        .table-header {
+          flex-direction: column;
+          gap: 15px;
+          align-items: flex-start;
+        }
+
+        .chambres-table-container {
+          overflow-x: auto;
+        }
+
+        table {
+          min-width: 800px;
+        }
+
+        .stats-container {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .stats-container {
+          grid-template-columns: 1fr;
+        }
+
+        .table-actions {
+          flex-direction: column;
+          width: 100%;
+        }
+
+        .btn {
+          justify-content: center;
+        }
+      }
+    </style>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+  </head>
+  <body>
+    <div class="admin-container">
+      <!-- Sidebar -->
+      <div class="sidebar">
+        <div class="logo">
+          <h1>Hôtel<span>Premium</span></h1>
+        </div>
+        <ul class="nav-links">
+          <li>
+            <a href="admin-reservations.html"
+              ><i class="fas fa-tachometer-alt"></i> Tableau de bord</a
+            >
+          </li>
+          <li class="active">
+            <a href="#"><i class="fas fa-bed"></i> Chambres</a>
+          </li>
+          <li>
+            <a href="admin-reservations.html"><i class="fas fa-calendar-check"></i> Réservations</a>
+          </li>
+          <li>
+            <a href="#"><i class="fas fa-users"></i> Clients</a>
+          </li>
+          <li>
+            <a href="#"><i class="fas fa-chart-bar"></i> Statistiques</a>
+          </li>
+          <li>
+            <a href="#"><i class="fas fa-cog"></i> Paramètres</a>
+          </li>
+          <li>
+            <a href="#"><i class="fas fa-sign-out-alt"></i> Déconnexion</a>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Main Content -->
+      <div class="main-content">
+        <div class="header">
+          <h2>Gestion des Chambres</h2>
+          <div class="user-info">
+            <div class="user-avatar">AD</div>
+            <span>Admin</span>
+          </div>
+        </div>
+
+        <!-- Messages -->
+        <div class="error-message" id="error-message"></div>
+        <div class="success-message" id="success-message"></div>
+
+        <!-- Stats Cards -->
+        <div class="stats-container">
+          <div class="stat-card total">
+            <div class="stat-label">Total des Chambres</div>
+            <div class="stat-value" id="stat-total">0</div>
+            <div class="stat-trend positive" id="stat-total-trend">
+              <i class="fas fa-arrow-up"></i> <span>0%</span> ce mois
+            </div>
+          </div>
+          <div class="stat-card available">
+            <div class="stat-label">Disponibles</div>
+            <div class="stat-value" id="stat-available">0</div>
+            <div class="stat-trend positive" id="stat-available-trend">
+              <i class="fas fa-arrow-up"></i> <span>0%</span> ce mois
+            </div>
+          </div>
+          <div class="stat-card occupied">
+            <div class="stat-label">Occupées</div>
+            <div class="stat-value" id="stat-occupied">0</div>
+            <div class="stat-trend negative" id="stat-occupied-trend">
+              <i class="fas fa-arrow-down"></i> <span>0%</span> ce mois
+            </div>
+          </div>
+          <div class="stat-card maintenance">
+            <div class="stat-label">En Maintenance</div>
+            <div class="stat-value" id="stat-maintenance">0</div>
+            <div class="stat-trend positive" id="stat-maintenance-trend">
+              <i class="fas fa-arrow-up"></i> <span>0%</span> ce mois
+            </div>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+          <div class="filter-group">
+            <label for="status-filter">Statut</label>
+            <select id="status-filter" class="filter-select">
+              <option value="all">Tous les statuts</option>
+              <option value="disponible">Disponible</option>
+              <option value="occupee">Occupée</option>
+              <option value="maintenance">Maintenance</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="type-filter">Type</label>
+            <select id="type-filter" class="filter-select">
+              <option value="all">Tous les types</option>
+              <option value="standard">Standard</option>
+              <option value="deluxe">Deluxe</option>
+              <option value="suite">Suite</option>
+            </select>
+          </div>
+          <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input
+              type="text"
+              id="search-input"
+              placeholder="Rechercher une chambre..."
+            />
+          </div>
+        </div>
+
+        <!-- Chambres Table -->
+        <div class="chambres-table-container">
+          <div class="table-header">
+            <h3>
+              Liste des Chambres <span id="chambres-count">(0)</span>
+            </h3>
+            <div class="table-actions">
+              <button class="btn btn-outline" id="export-btn">
+                <i class="fas fa-download"></i> Exporter
+              </button>
+              <button class="btn btn-primary" id="add-chambre-btn">
+                <i class="fas fa-plus"></i> Nouvelle Chambre
+              </button>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>ID Chambre</th>
+                <th>Numéro</th>
+                <th>Type</th>
+                <th>Capacité</th>
+                <th>Prix/Nuit</th>
+                <th>Statut</th>
+                <th>Réservations</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="chambres-body">
+              <tr>
+                <td colspan="8" style="text-align: center; padding: 40px">
+                  Chargement des chambres...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- Pagination -->
+          <div class="pagination">
+            <div class="pagination-info" id="pagination-info">
+              Chargement des données...
+            </div>
+            <div class="pagination-controls">
+              <button class="page-btn" id="prev-page">
+                <i class="fas fa-chevron-left"></i>
+              </button>
+              <button class="page-btn active" id="current-page">1</button>
+              <button class="page-btn" id="next-page">
+                <i class="fas fa-chevron-right"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal pour ajouter/modifier une chambre -->
+    <div class="modal" id="chambre-modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="modal-title">Nouvelle Chambre</h3>
+          <button class="close-btn" id="close-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="chambre-form">
+            <input type="hidden" id="chambre-id">
+            <div class="form-group">
+              <label for="numero-chambre">Numéro de chambre *</label>
+              <input type="text" id="numero-chambre" class="form-control" required>
+            </div>
+            <div class="form-group">
+              <label for="type-chambre">Type de chambre *</label>
+              <select id="type-chambre" class="form-control" required>
+                <option value="standard">Standard</option>
+                <option value="deluxe">Deluxe</option>
+                <option value="suite">Suite</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="capacite-chambre">Capacité (personnes) *</label>
+              <input type="number" id="capacite-chambre" class="form-control" min="1" max="10" required>
+            </div>
+            <div class="form-group">
+              <label for="prix-chambre">Prix par nuit (€) *</label>
+              <input type="number" id="prix-chambre" class="form-control" step="0.01" min="0" required>
+            </div>
+            <div class="form-group">
+              <label for="description-chambre">Description</label>
+              <textarea id="description-chambre" class="form-control" rows="3"></textarea>
+            </div>
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="disponible-chambre" checked>
+                Chambre disponible
+              </label>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" id="cancel-btn">Annuler</button>
+          <button class="btn btn-primary" id="save-chambre-btn">Enregistrer</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Variables globales
+      let currentPage = 1;
+      let totalChambres = 0;
+      const itemsPerPage = 10;
+      let currentAction = 'add'; // 'add' ou 'edit'
+
+      // Charger les données au démarrage
+      document.addEventListener("DOMContentLoaded", function () {
+        loadStats();
+        loadChambres();
+        setupEventListeners();
+      });
+
+      // Charger les statistiques
+      async function loadStats() {
+        try {
+          showLoading("stats");
+          const response = await fetch(
+            "admin-chambres.php?action=get_stats"
+          );
+          const result = await response.json();
+
+          if (result.success) {
+            updateStatsDisplay(result.data);
+          } else {
+            showError(
+              "Erreur lors du chargement des statistiques: " + result.error
+            );
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          showError("Erreur de connexion au serveur");
+        } finally {
+          hideLoading("stats");
+        }
+      }
+
+      // Charger les chambres
+      async function loadChambres(page = 1) {
+        try {
+          showLoading("chambres");
+          const statusFilter = document.getElementById("status-filter").value;
+          const typeFilter = document.getElementById("type-filter").value;
+          const searchTerm = document.getElementById("search-input").value;
+
+          const params = new URLSearchParams({
+            action: "get_chambres",
+            page: page,
+            status: statusFilter,
+            type: typeFilter,
+            search: searchTerm,
+          });
+
+          const response = await fetch(`admin-chambres.php?${params}`);
+          const result = await response.json();
+
+          if (result.success) {
+            updateChambresDisplay(result.data);
+            updatePagination(result.total, page);
+            document.getElementById(
+              "chambres-count"
+            ).textContent = `(${result.data.length})`;
+          } else {
+            showError(
+              "Erreur lors du chargement des chambres: " + result.error
+            );
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          showError("Erreur de connexion au serveur");
+        } finally {
+          hideLoading("chambres");
+        }
+      }
+
+      // Mettre à jour l'affichage des statistiques
+      function updateStatsDisplay(stats) {
+        document.getElementById("stat-total").textContent = stats.total || 0;
+        document.getElementById("stat-available").textContent =
+          stats.available || 0;
+        document.getElementById("stat-occupied").textContent =
+          stats.occupied || 0;
+        document.getElementById("stat-maintenance").textContent =
+          stats.maintenance || 0;
+      }
+
+      // Mettre à jour l'affichage des chambres
+      function updateChambresDisplay(chambres) {
+        const tbody = document.getElementById("chambres-body");
+
+        if (chambres.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="8" style="text-align: center; padding: 40px;">
+                Aucune chambre trouvée
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        tbody.innerHTML = chambres
+          .map(
+            (chambre) => `
+          <tr>
+            <td class="chambre-id">#CH-${chambre.idChambre}</td>
+            <td>
+              <div class="chambre-info">
+                <span class="chambre-numero">${escapeHtml(chambre.numeroChambre)}</span>
+              </div>
+            </td>
+            <td>
+              <div class="chambre-info">
+                <span class="chambre-type">${escapeHtml(chambre.type_chambre)}</span>
+              </div>
+            </td>
+            <td>${chambre.capacite}</td>
+            <td class="price">${formatPrice(chambre.prix_nuit)} €</td>
+            <td>
+              <span class="status ${getStatusClass(chambre.statut)}">
+                ${getStatusText(chambre.statut)}
+              </span>
+            </td>
+            <td>
+              <div class="reservation-list">
+                ${chambre.reservations && chambre.reservations.length > 0 
+                  ? chambre.reservations.map(reservation => `
+                    <div class="reservation-item">
+                      <div class="reservation-dates">${formatDate(reservation.date_arrivee)} - ${formatDate(reservation.date_depart)}</div>
+                      <div class="reservation-client">${escapeHtml(reservation.nom)} ${escapeHtml(reservation.prenom)}</div>
+                    </div>
+                  `).join('')
+                  : '<div class="reservation-item">Aucune réservation</div>'
+                }
+              </div>
+            </td>
+            <td>
+              <div class="actions">
+                <button class="action-btn" title="Voir les détails" onclick="viewChambre(${chambre.idChambre})">
+                  <i class="fas fa-eye"></i>
+                </button>
+                <button class="action-btn" title="Modifier" onclick="editChambre(${chambre.idChambre})">
+                  <i class="fas fa-edit"></i>
+                </button>
+                ${chambre.statut === 'maintenance' 
+                  ? `<button class="action-btn" title="Rendre disponible" onclick="updateChambreStatus(${chambre.idChambre}, 'disponible')">
+                      <i class="fas fa-check"></i>
+                    </button>`
+                  : `<button class="action-btn" title="Mettre en maintenance" onclick="updateChambreStatus(${chambre.idChambre}, 'maintenance')">
+                      <i class="fas fa-tools"></i>
+                    </button>`
+                }
+              </div>
+            </td>
+          </tr>
+        `
+          )
+          .join("");
+      }
+
+      // Mettre à jour la pagination
+      function updatePagination(total, currentPage) {
+        totalChambres = total;
+        const totalPages = Math.ceil(total / itemsPerPage);
+        const startItem = (currentPage - 1) * itemsPerPage + 1;
+        const endItem = Math.min(currentPage * itemsPerPage, total);
+
+        document.getElementById(
+          "pagination-info"
+        ).textContent = `Affichage de ${startItem} à ${endItem} sur ${total} chambres`;
+
+        document.getElementById("current-page").textContent = currentPage;
+
+        // Gérer l'état des boutons de pagination
+        document.getElementById("prev-page").disabled = currentPage <= 1;
+        document.getElementById("next-page").disabled =
+          currentPage >= totalPages;
+      }
+
+      // Configurer les écouteurs d'événements
+      function setupEventListeners() {
+        // Filtres
+        document
+          .getElementById("status-filter")
+          .addEventListener("change", () => {
+            currentPage = 1;
+            loadChambres(currentPage);
+          });
+
+        document
+          .getElementById("type-filter")
+          .addEventListener("change", () => {
+            currentPage = 1;
+            loadChambres(currentPage);
+          });
+
+        // Recherche
+        document.getElementById("search-input").addEventListener(
+          "input",
+          debounce(() => {
+            currentPage = 1;
+            loadChambres(currentPage);
+          }, 500)
+        );
+
+        // Pagination
+        document.getElementById("prev-page").addEventListener("click", () => {
+          if (currentPage > 1) {
+            currentPage--;
+            loadChambres(currentPage);
+          }
+        });
+
+        document.getElementById("next-page").addEventListener("click", () => {
+          const totalPages = Math.ceil(totalChambres / itemsPerPage);
+          if (currentPage < totalPages) {
+            currentPage++;
+            loadChambres(currentPage);
+          }
+        });
+
+        // Export
+        document
+          .getElementById("export-btn")
+          .addEventListener("click", exportData);
+
+        // Ajouter une chambre
+        document
+          .getElementById("add-chambre-btn")
+          .addEventListener("click", () => {
+            currentAction = 'add';
+            showChambreModal();
+          });
+
+        // Modal events
+        document.getElementById("close-modal").addEventListener("click", hideChambreModal);
+        document.getElementById("cancel-btn").addEventListener("click", hideChambreModal);
+        document.getElementById("save-chambre-btn").addEventListener("click", saveChambre);
+      }
+
+      // Fonctions utilitaires
+      function formatDate(dateString) {
+        const date = new Date(dateString);
+        return date.toLocaleDateString("fr-FR", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        });
+      }
+
+      function formatPrice(price) {
+        return new Intl.NumberFormat("fr-FR", {
+          minimumFractionDigits: 2,
+        }).format(price);
+      }
+
+      function getStatusClass(status) {
+        const statusClasses = {
+          disponible: "available",
+          occupee: "occupied",
+          maintenance: "maintenance",
+        };
+        return statusClasses[status] || "available";
+      }
+
+      function getStatusText(status) {
+        const statusTexts = {
+          disponible: "Disponible",
+          occupee: "Occupée",
+          maintenance: "Maintenance",
+        };
+        return statusTexts[status] || status;
+      }
+
+      function escapeHtml(unsafe) {
+        return unsafe
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+          const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+          };
+          clearTimeout(timeout);
+          timeout = setTimeout(later, wait);
+        };
+      }
+
+      function showLoading(element) {
+        const container = document.getElementById(
+          element === "chambres" ? "chambres-body" : "stats-container"
+        );
+        container.classList.add("loading");
+      }
+
+      function hideLoading(element) {
+        const container = document.getElementById(
+          element === "chambres" ? "chambres-body" : "stats-container"
+        );
+        container.classList.remove("loading");
+      }
+
+      function showError(message) {
+        const errorDiv = document.getElementById("error-message");
+        errorDiv.textContent = message;
+        errorDiv.style.display = "block";
+
+        setTimeout(() => {
+          errorDiv.style.display = "none";
+        }, 5000);
+      }
+
+      function showSuccess(message) {
+        const successDiv = document.getElementById("success-message");
+        successDiv.textContent = message;
+        successDiv.style.display = "block";
+
+        setTimeout(() => {
+          successDiv.style.display = "none";
+        }, 3000);
+      }
+
+      // Fonctions d'action
+      async function updateChambreStatus(chambreId, newStatus) {
+        const actionText = newStatus === "disponible" ? "rendre disponible" : "mettre en maintenance";
+
+        if (
+          !confirm(`Êtes-vous sûr de vouloir ${actionText} cette chambre ?`)
+        ) {
+          return;
+        }
+
+        try {
+          const response = await fetch("admin-chambres.php", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action: "update_status",
+              chambre_id: chambreId,
+              status: newStatus,
+            }),
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            showSuccess(
+              `Chambre ${actionText === "rendre disponible" ? "rendue disponible" : "mise en maintenance"} avec succès`
+            );
+            // Recharger les données
+            loadStats();
+            loadChambres(currentPage);
+          } else {
+            showError("Erreur: " + result.error);
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          showError("Erreur lors de la mise à jour");
+        }
+      }
+
+      function viewChambre(chambreId) {
+        alert(`Détails de la chambre #${chambreId}`);
+        // Dans une implémentation réelle, ouvrir un modal avec les détails complets
+      }
+
+      async function editChambre(chambreId) {
+        try {
+          const response = await fetch(`admin-chambres.php?action=get_chambre&id=${chambreId}`);
+          const result = await response.json();
+
+          if (result.success) {
+            currentAction = 'edit';
+            showChambreModal(result.data);
+          } else {
+            showError("Erreur lors du chargement de la chambre: " + result.error);
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          showError("Erreur de connexion au serveur");
+        }
+      }
+
+      function showChambreModal(chambre = null) {
+        const modal = document.getElementById("chambre-modal");
+        const title = document.getElementById("modal-title");
+        const form = document.getElementById("chambre-form");
+
+        if (chambre) {
+          // Mode édition
+          title.textContent = "Modifier la chambre";
+          document.getElementById("chambre-id").value = chambre.idChambre;
+          document.getElementById("numero-chambre").value = chambre.numeroChambre;
+          document.getElementById("type-chambre").value = chambre.type_chambre;
+          document.getElementById("capacite-chambre").value = chambre.capacite;
+          document.getElementById("prix-chambre").value = chambre.prix_nuit;
+          document.getElementById("description-chambre").value = chambre.description;
+          document.getElementById("disponible-chambre").checked = chambre.disponible == 1;
+        } else {
+          // Mode ajout
+          title.textContent = "Nouvelle chambre";
+          form.reset();
+          document.getElementById("disponible-chambre").checked = true;
+        }
+
+        modal.style.display = "flex";
+      }
+
+      function hideChambreModal() {
+        document.getElementById("chambre-modal").style.display = "none";
+      }
+
+      async function saveChambre() {
+        const form = document.getElementById("chambre-form");
+        const formData = new FormData(form);
+
+        if (!form.checkValidity()) {
+          form.reportValidity();
+          return;
+        }
+
+        const chambreData = {
+          numero: document.getElementById("numero-chambre").value,
+          type: document.getElementById("type-chambre").value,
+          capacite: parseInt(document.getElementById("capacite-chambre").value),
+          prix: parseFloat(document.getElementById("prix-chambre").value),
+          description: document.getElementById("description-chambre").value,
+          disponible: document.getElementById("disponible-chambre").checked ? 1 : 0
+        };
+
+        if (currentAction === 'edit') {
+          chambreData.chambre_id = document.getElementById("chambre-id").value;
+          chambreData.action = 'update_chambre';
+        } else {
+          chambreData.action = 'add_chambre';
+        }
+
+        try {
+          const response = await fetch("admin-chambres.php", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(chambreData),
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            showSuccess(
+              `Chambre ${currentAction === 'add' ? 'ajoutée' : 'modifiée'} avec succès`
+            );
+            hideChambreModal();
+            // Recharger les données
+            loadStats();
+            loadChambres(currentPage);
+          } else {
+            showError("Erreur: " + result.error);
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          showError("Erreur lors de l'enregistrement");
+        }
+      }
+
+      function exportData() {
+        // Implémentation basique de l'export
+        const statusFilter = document.getElementById("status-filter").value;
+        const typeFilter = document.getElementById("type-filter").value;
+        const searchTerm = document.getElementById("search-input").value;
+
+        const params = new URLSearchParams({
+          action: "export",
+          status: statusFilter,
+          type: typeFilter,
+          search: searchTerm,
+        });
+
+        window.open(`admin-chambres.php?${params}`, "_blank");
+      }
+    </script>
+  </body>
+</html>
