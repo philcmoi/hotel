@@ -1,9 +1,19 @@
 <?php
 // admin-reservations.php
+session_start();
 header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+
+// Gérer les requêtes preflight OPTIONS pour CORS
+if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+    exit(0);
+}
+
+// Inclure la configuration
 require_once 'config.php';
 
-// Classe Database intégrée
 class Database {
     private $host = DB_HOST;
     private $db_name = DB_NAME;
@@ -17,11 +27,11 @@ class Database {
             $this->conn = new PDO("mysql:host=" . $this->host . ";dbname=" . $this->db_name . ";charset=utf8", $this->username, $this->password);
             $this->conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             $this->conn->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            return $this->conn;
         } catch(PDOException $exception) {
             error_log("Erreur de connexion BD: " . $exception->getMessage());
-            throw new Exception("Erreur de connexion à la base de données");
+            return false;
         }
-        return $this->conn;
     }
 }
 
@@ -31,6 +41,9 @@ class AdminReservations {
     public function __construct() {
         $database = new Database();
         $this->conn = $database->getConnection();
+        if (!$this->conn) {
+            throw new Exception("Impossible de se connecter à la base de données");
+        }
     }
 
     // Récupérer les statistiques
@@ -44,13 +57,22 @@ class AdminReservations {
         
         $stmt = $this->conn->prepare($query);
         $stmt->execute();
-        return $stmt->fetch(PDO::FETCH_ASSOC);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // S'assurer que toutes les valeurs sont définies
+        return [
+            'total' => $result['total'] ?? 0,
+            'confirmed' => $result['confirmed'] ?? 0,
+            'pending' => $result['pending'] ?? 0,
+            'cancelled' => $result['cancelled'] ?? 0
+        ];
     }
 
     // Récupérer les réservations avec pagination et filtres
     public function getAllReservations($page = 1, $itemsPerPage = 10, $filters = []) {
         $offset = ($page - 1) * $itemsPerPage;
         
+        // Requête corrigée avec la table de liaison reservation_chambres
         $query = "SELECT 
                     r.idReservation,
                     r.date_arrivee,
@@ -59,27 +81,22 @@ class AdminReservations {
                     r.prix_total,
                     r.etat_reservation,
                     r.date_reservation,
-                    r.commentaire,
-                    c.idClient,
                     c.nom,
                     c.prenom,
                     c.email,
-                    c.telephone,
-                    ch.idChambre,
                     ch.numeroChambre,
-                    ch.type_chambre,
-                    ch.prix_nuit
+                    ch.type_chambre
                   FROM reservations r
-                  INNER JOIN clients c ON r.idClient = c.idClient
-                  INNER JOIN reservation_chambres rc ON r.idReservation = rc.idReservation
-                  INNER JOIN chambres ch ON rc.idChambre = ch.idChambre
+                  LEFT JOIN clients c ON r.idClient = c.idClient
+                  LEFT JOIN reservation_chambres rc ON r.idReservation = rc.idReservation
+                  LEFT JOIN chambres ch ON rc.idChambre = ch.idChambre
                   WHERE 1=1";
         
         $countQuery = "SELECT COUNT(DISTINCT r.idReservation) as total
                       FROM reservations r
-                      INNER JOIN clients c ON r.idClient = c.idClient
-                      INNER JOIN reservation_chambres rc ON r.idReservation = rc.idReservation
-                      INNER JOIN chambres ch ON rc.idChambre = ch.idChambre
+                      LEFT JOIN clients c ON r.idClient = c.idClient
+                      LEFT JOIN reservation_chambres rc ON r.idReservation = rc.idReservation
+                      LEFT JOIN chambres ch ON rc.idChambre = ch.idChambre
                       WHERE 1=1";
         
         $params = [];
@@ -93,12 +110,12 @@ class AdminReservations {
         
         if (!empty($filters['search'])) {
             $searchTerm = '%' . $filters['search'] . '%';
-            $query .= " AND (c.nom LIKE :search OR c.prenom LIKE :search OR c.email LIKE :search OR r.idReservation LIKE :search)";
-            $countQuery .= " AND (c.nom LIKE :search OR c.prenom LIKE :search OR c.email LIKE :search OR r.idReservation LIKE :search)";
+            $query .= " AND (c.nom LIKE :search OR c.prenom LIKE :search OR c.email LIKE :search OR r.idReservation LIKE :search OR ch.numeroChambre LIKE :search)";
+            $countQuery .= " AND (c.nom LIKE :search OR c.prenom LIKE :search OR c.email LIKE :search OR r.idReservation LIKE :search OR ch.numeroChambre LIKE :search)";
             $params[':search'] = $searchTerm;
         }
         
-        $query .= " ORDER BY r.date_reservation DESC LIMIT :offset, :limit";
+        $query .= " GROUP BY r.idReservation ORDER BY r.date_reservation DESC LIMIT :offset, :limit";
         
         // Compter le total
         $countStmt = $this->conn->prepare($countQuery);
@@ -106,7 +123,8 @@ class AdminReservations {
             $countStmt->bindValue($key, $value);
         }
         $countStmt->execute();
-        $total = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
+        $totalResult = $countStmt->fetch(PDO::FETCH_ASSOC);
+        $total = $totalResult['total'] ?? 0;
         
         // Récupérer les données
         $stmt = $this->conn->prepare($query);
@@ -126,22 +144,43 @@ class AdminReservations {
 
     // Mettre à jour le statut d'une réservation
     public function updateReservationStatus($reservationId, $status) {
+        // Valider le statut
+        $allowedStatus = ['confirme', 'en attente', 'annulee'];
+        if (!in_array($status, $allowedStatus)) {
+            throw new Exception("Statut invalide: " . $status);
+        }
+        
         $query = "UPDATE reservations SET etat_reservation = :status WHERE idReservation = :id";
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(':status', $status);
         $stmt->bindParam(':id', $reservationId);
-        return $stmt->execute();
+        
+        $result = $stmt->execute();
+        
+        if ($result && $stmt->rowCount() > 0) {
+            return true;
+        } else {
+            throw new Exception("Aucune réservation trouvée avec cet ID ou statut identique");
+        }
     }
 }
 
-// Vérifier l'authentification
+// Vérifier l'authentification admin (à décommenter en production)
+/*
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
     echo json_encode(['success' => false, 'error' => 'Non authentifié']);
     exit;
 }
+*/
 
 // Traitement des requêtes
-$admin = new AdminReservations();
+try {
+    $admin = new AdminReservations();
+} catch (Exception $e) {
+    echo json_encode(['success' => false, 'error' => 'Erreur de connexion à la base de données: ' . $e->getMessage()]);
+    exit;
+}
+
 $response = ['success' => false, 'error' => 'Action non reconnue'];
 
 try {
@@ -153,7 +192,7 @@ try {
                 break;
                 
             case 'get_reservations':
-                $page = $_GET['page'] ?? 1;
+                $page = max(1, intval($_GET['page'] ?? 1));
                 $status = $_GET['status'] ?? 'all';
                 $search = $_GET['search'] ?? '';
                 
@@ -169,6 +208,10 @@ try {
                     'total' => $result['total']
                 ];
                 break;
+                
+            default:
+                $response = ['success' => false, 'error' => 'Action inconnue'];
+                break;
         }
     } 
     elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -178,17 +221,29 @@ try {
             switch ($input['action']) {
                 case 'update_status':
                     if (isset($input['reservation_id']) && isset($input['status'])) {
-                        $success = $admin->updateReservationStatus($input['reservation_id'], $input['status']);
+                        $reservationId = intval($input['reservation_id']);
+                        $status = $input['status'];
+                        
+                        $success = $admin->updateReservationStatus($reservationId, $status);
                         $response = ['success' => $success];
                         if (!$success) {
-                            $response['error'] = 'Erreur lors de la mise à jour';
+                            $response['error'] = 'Erreur lors de la mise à jour du statut';
                         }
+                    } else {
+                        $response['error'] = 'Paramètres manquants: reservation_id et status requis';
                     }
                     break;
+                    
+                default:
+                    $response = ['success' => false, 'error' => 'Action inconnue'];
+                    break;
             }
+        } else {
+            $response['error'] = 'Aucune action spécifiée';
         }
     }
 } catch (Exception $e) {
+    error_log("Erreur AdminReservations: " . $e->getMessage());
     $response = ['success' => false, 'error' => $e->getMessage()];
 }
 

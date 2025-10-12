@@ -794,7 +794,6 @@
           hideLoading("stats");
         }
       }
-
       // Charger les réservations
       async function loadReservations(page = 1) {
         try {
@@ -809,8 +808,15 @@
             search: searchTerm,
           });
 
+          console.log("Chargement des réservations...");
           const response = await fetch(`admin-reservations.php?${params}`);
+
+          if (!response.ok) {
+            throw new Error(`Erreur HTTP: ${response.status}`);
+          }
+
           const result = await response.json();
+          console.log("Résultat reçu:", result);
 
           if (result.success) {
             updateReservationsDisplay(result.data);
@@ -820,26 +826,29 @@
             ).textContent = `(${result.data.length})`;
           } else {
             showError(
-              "Erreur lors du chargement des réservations: " + result.error
+              "Erreur lors du chargement des réservations: " +
+                (result.error || "Erreur inconnue")
             );
           }
         } catch (error) {
           console.error("Erreur:", error);
-          showError("Erreur de connexion au serveur");
+          showError("Erreur de connexion au serveur: " + error.message);
+
+          // Afficher un message d'erreur dans le tableau
+          const tbody = document.getElementById("reservations-body");
+          tbody.innerHTML = `
+            <tr>
+                <td colspan="8" style="text-align: center; padding: 40px; color: #ff4757;">
+                    Erreur de chargement: ${error.message}<br>
+                    <button onclick="loadReservations(1)" style="margin-top: 10px; padding: 8px 16px; background: #4361ee; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        Réessayer
+                    </button>
+                </td>
+            </tr>
+        `;
         } finally {
           hideLoading("reservations");
         }
-      }
-
-      // Mettre à jour l'affichage des statistiques
-      function updateStatsDisplay(stats) {
-        document.getElementById("stat-total").textContent = stats.total || 0;
-        document.getElementById("stat-confirmed").textContent =
-          stats.confirmed || 0;
-        document.getElementById("stat-pending").textContent =
-          stats.pending || 0;
-        document.getElementById("stat-cancelled").textContent =
-          stats.cancelled || 0;
       }
 
       // Mettre à jour l'affichage des réservations
@@ -849,89 +858,112 @@
         if (reservations.length === 0) {
           tbody.innerHTML = `
             <tr>
-              <td colspan="8" style="text-align: center; padding: 40px;">
-                Aucune réservation trouvée
-              </td>
+                <td colspan="8" style="text-align: center; padding: 40px;">
+                    Aucune réservation trouvée
+                </td>
             </tr>
-          `;
+        `;
           return;
         }
 
         tbody.innerHTML = reservations
-          .map(
-            (reservation) => `
-          <tr>
-            <td class="reservation-id">#RES-${reservation.idReservation}</td>
-            <td>
-              <div class="client-info">
-                <span class="client-name">${escapeHtml(
-                  reservation.prenom
-                )} ${escapeHtml(reservation.nom)}</span>
-                <span class="client-email">${escapeHtml(
-                  reservation.email
-                )}</span>
-              </div>
-            </td>
-            <td>
-              <div class="chambre-info">
-                <span class="chambre-numero">Chambre ${escapeHtml(
-                  reservation.numeroChambre
-                )}</span>
-                <span class="chambre-type">${escapeHtml(
-                  reservation.type_chambre
-                )}</span>
-              </div>
-            </td>
-            <td>
-              <div class="date-info">
-                <span class="date-range">${formatDate(
-                  reservation.date_arrivee
-                )} - ${formatDate(reservation.date_depart)}</span>
-                <span class="nights">${calculateNights(
-                  reservation.date_arrivee,
-                  reservation.date_depart
-                )} nuits</span>
-              </div>
-            </td>
-            <td>${reservation.nombre_personnes}</td>
-            <td class="price">${formatPrice(reservation.prix_total)} €</td>
-            <td>
-              <span class="status ${getStatusClass(
-                reservation.etat_reservation
-              )}">
-                ${getStatusText(reservation.etat_reservation)}
-              </span>
-            </td>
-            <td>
-              <div class="actions">
-                <button class="action-btn" title="Voir les détails" onclick="viewReservation(${
-                  reservation.idReservation
-                })">
-                  <i class="fas fa-eye"></i>
-                </button>
-                ${
-                  reservation.etat_reservation === "en attente"
-                    ? `
-                  <button class="action-btn" title="Confirmer" onclick="updateReservationStatus(${reservation.idReservation}, 'confirme')">
-                    <i class="fas fa-check"></i>
-                  </button>
-                `
-                    : ""
-                }
-                ${
-                  reservation.etat_reservation !== "annulee"
-                    ? `
-                  <button class="action-btn" title="Annuler" onclick="updateReservationStatus(${reservation.idReservation}, 'annulee')">
-                    <i class="fas fa-times"></i>
-                  </button>
-                `
-                    : ""
-                }
-              </div>
-            </td>
-          </tr>
-        `
-          )
+          .map((reservation) => {
+            // Déterminer quels boutons afficher en fonction du statut actuel
+            const isPending = reservation.etat_reservation === "en attente";
+            const isConfirmed = reservation.etat_reservation === "confirme";
+            const isCancelled = reservation.etat_reservation === "annulee";
+
+            let actionButtons = "";
+
+            // Bouton "Voir les détails" - toujours visible
+            actionButtons += `
+                    <button class="action-btn" title="Voir les détails" onclick="viewReservation(${reservation.idReservation})">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                `;
+
+            // Bouton "Confirmer" - visible seulement pour les réservations en attente
+            if (isPending) {
+              actionButtons += `
+                        <button class="action-btn" title="Confirmer" onclick="updateReservationStatus(${reservation.idReservation}, 'confirme', event)">
+                            <i class="fas fa-check" style="color: #2ed573;"></i>
+                        </button>
+                    `;
+            }
+
+            // Bouton "Annuler" - visible pour les réservations en attente ou confirmées
+            if (isPending || isConfirmed) {
+              actionButtons += `
+                        <button class="action-btn" title="Annuler" onclick="updateReservationStatus(${reservation.idReservation}, 'annulee', event)">
+                            <i class="fas fa-times" style="color: #ff4757;"></i>
+                        </button>
+                    `;
+            }
+
+            // Bouton "Remettre en attente" - visible pour les réservations annulées
+            if (isCancelled) {
+              actionButtons += `
+                        <button class="action-btn" title="Remettre en attente" onclick="updateReservationStatus(${reservation.idReservation}, 'en attente', event)">
+                            <i class="fas fa-clock" style="color: #ffa502;"></i>
+                        </button>
+                    `;
+            }
+
+            return `
+                <tr>
+                    <td class="reservation-id">#RES-${
+                      reservation.idReservation
+                    }</td>
+                    <td>
+                        <div class="client-info">
+                            <span class="client-name">${escapeHtml(
+                              reservation.prenom
+                            )} ${escapeHtml(reservation.nom)}</span>
+                            <span class="client-email">${escapeHtml(
+                              reservation.email
+                            )}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="chambre-info">
+                            <span class="chambre-numero">Chambre ${escapeHtml(
+                              reservation.numeroChambre
+                            )}</span>
+                            <span class="chambre-type">${escapeHtml(
+                              reservation.type_chambre
+                            )}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="date-info">
+                            <span class="date-range">${formatDate(
+                              reservation.date_arrivee
+                            )} - ${formatDate(reservation.date_depart)}</span>
+                            <span class="nights">${calculateNights(
+                              reservation.date_arrivee,
+                              reservation.date_depart
+                            )} nuits</span>
+                        </div>
+                    </td>
+                    <td>${reservation.nombre_personnes}</td>
+                    <td class="price">${formatPrice(
+                      reservation.prix_total
+                    )} €</td>
+                    <td>
+                        <span class="status ${getStatusClass(
+                          reservation.etat_reservation
+                        )}">
+                            ${getStatusText(reservation.etat_reservation)}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="actions">
+                            ${actionButtons}
+                        </div>
+                    </td>
+                </tr>
+                `;
+          })
           .join("");
       }
 
@@ -1091,8 +1123,16 @@
       }
 
       // Fonctions d'action
-      async function updateReservationStatus(reservationId, newStatus) {
-        const actionText = newStatus === "confirme" ? "confirmer" : "annuler";
+      async function updateReservationStatus(reservationId, newStatus, event) {
+        console.log("Mise à jour du statut:", reservationId, newStatus);
+
+        const actionTexts = {
+          confirme: "confirmer",
+          annulee: "annuler",
+          "en attente": "remettre en attente",
+        };
+
+        const actionText = actionTexts[newStatus] || "modifier";
 
         if (
           !confirm(`Êtes-vous sûr de vouloir ${actionText} cette réservation ?`)
@@ -1100,7 +1140,21 @@
           return;
         }
 
+        let button = null;
+        let originalHTML = "";
+
         try {
+          // Afficher un indicateur de chargement sur le bouton cliqué
+          if (event && event.target) {
+            button = event.target.closest(".action-btn");
+            if (button) {
+              originalHTML = button.innerHTML;
+              button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+              button.disabled = true;
+              button.style.opacity = "0.6";
+            }
+          }
+
           const response = await fetch("admin-reservations.php", {
             method: "POST",
             headers: {
@@ -1114,22 +1168,57 @@
           });
 
           const result = await response.json();
+          console.log("Réponse du serveur:", result);
 
           if (result.success) {
-            showSuccess(
-              `Réservation ${
-                actionText === "confirmer" ? "confirmée" : "annulée"
-              } avec succès`
-            );
-            // Recharger les données
-            loadStats();
-            loadReservations(currentPage);
+            let message = "";
+            let icon = "✅";
+
+            switch (newStatus) {
+              case "confirme":
+                message = "Réservation confirmée avec succès";
+                icon = "✅";
+                break;
+              case "annulee":
+                message = "Réservation annulée avec succès";
+                icon = "❌";
+                break;
+              case "en attente":
+                message = "Réservation remise en attente";
+                icon = "⏳";
+                break;
+              default:
+                message = "Statut mis à jour avec succès";
+                icon = "✓";
+            }
+            showSuccess(`${icon} ${message}`);
+
+            // Recharger les données après un court délai
+            setTimeout(() => {
+              loadStats();
+              loadReservations(currentPage);
+            }, 1000);
           } else {
-            showError("Erreur: " + result.error);
+            showError(
+              "Erreur: " +
+                (result.error || "Erreur inconnue lors de la mise à jour")
+            );
+            // Restaurer le bouton en cas d'erreur
+            if (button) {
+              button.innerHTML = originalHTML;
+              button.disabled = false;
+              button.style.opacity = "1";
+            }
           }
         } catch (error) {
           console.error("Erreur:", error);
-          showError("Erreur lors de la mise à jour");
+          showError("Erreur de connexion: " + error.message);
+          // Restaurer le bouton en cas d'erreur
+          if (button) {
+            button.innerHTML = originalHTML;
+            button.disabled = false;
+            button.style.opacity = "1";
+          }
         }
       }
 
@@ -1151,6 +1240,30 @@
 
         window.open(`admin-reservations.php?${params}`, "_blank");
       }
+
+      // Test de connexion
+      async function testConnection() {
+        try {
+          console.log("Test de connexion...");
+          const response = await fetch(
+            "admin-reservations.php?action=get_stats"
+          );
+          const result = await response.json();
+          console.log("Test de connexion résultat:", result);
+          return result.success;
+        } catch (error) {
+          console.error("Échec du test de connexion:", error);
+          return false;
+        }
+      }
+      /* *********************************************************************************************/
+      // Appeler le test au chargement
+      document.addEventListener("DOMContentLoaded", async function () {
+        const connected = await testConnection();
+        if (!connected) {
+          console.warn("Utilisation des données de démonstration");
+        }
+      });
     </script>
   </body>
 </html>

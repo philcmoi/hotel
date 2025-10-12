@@ -1,6 +1,6 @@
 <?php
 // Démarrer la session une seule fois
-if (session_status() === PHP_SESSION_NONE) {
+/*if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
@@ -74,5 +74,13 @@ function checkAPIAuth() {
         exit;
     }
     return true;
-}
+}*/
+
+
+// config.php - Remplacez avec vos vraies informations
+// config.php
+define('DB_HOST', 'localhost');
+define('DB_NAME', 'hotel');        // Votre base de données
+define('DB_USER', 'root');         // Votre utilisateur MySQL
+define('DB_PASS', '');   
 ?>

@@ -524,30 +524,12 @@ if (!isLoggedIn()) {
         document.getElementById(sectionId).classList.add("active");
       }
 
-      // Chargement des données
-      /*async function loadReservations() {
+    async function loadReservations() {
         try {
           const response = await fetch("admin-reservations.php?action=get_all");
-          const result = await response.json();
-
-          if (result.success) {
-            allReservations = result.data;
-            displayReservations(allReservations);
-            updateDashboardStats(result.data);
-          } else {
-            alert("Erreur: " + result.error);
-          }
-        } catch (error) {
-          console.error("Erreur:", error);
-          alert("Erreur lors du chargement des réservations");
-        }
-      }
-*/
-
-      async function loadReservations() {
-        try {
-          const response = await fetch("admin-reservations.php?action=get_all");
-          const result = await response.json();
+          const text = await response.text(); // Premièrement, on lit le texte
+          console.log("Réponse reçue:", text);
+          const result = JSON.parse(text); // Ensuite on parse
 
           if (result.success) {
             allReservations = result.data;
@@ -631,51 +613,7 @@ if (!isLoggedIn()) {
         });
       }
 
-      // Fonction pour changer le statut
-      /* function changeStatus(reservationId, newStatus) {
-        const statusLabels = {
-          "en attente": "en attente",
-          confirme: "confirmée",
-          "en cours": "en cours",
-          termine: "terminée",
-          annule: "annulée",
-        };
-
-        if (
-          !confirm(
-            `Êtes-vous sûr de vouloir changer le statut de cette réservation en "${statusLabels[newStatus]}" ?`
-          )
-        ) {
-          return;
-        }
-
-        fetch(
-          `admin-reservations.php?action=update_status&id=${reservationId}`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              status: newStatus,
-            }),
-          }
-        )
-          .then((response) => response.json())
-          .then((data) => {
-            if (data.success) {
-              alert("Statut mis à jour avec succès");
-              loadReservations(); // Recharger la liste
-            } else {
-              alert("Erreur: " + data.error);
-            }
-          })
-          .catch((error) => {
-            console.error("Erreur:", error);
-            alert("Erreur lors de la mise à jour du statut");
-          });
-      } */
-
+      
       function changeStatus(reservationId, newStatus) {
         const statusLabels = {
           "en attente": "en attente",
@@ -760,46 +698,7 @@ if (!isLoggedIn()) {
           await updateReservation();
         });
 
-      /*async function createReservation() {
-        const formData = {
-          nom: document.getElementById("create-nom").value,
-          prenom: document.getElementById("create-prenom").value,
-          email: document.getElementById("create-email").value,
-          telephone: document.getElementById("create-telephone").value,
-          adresse: document.getElementById("create-adresse").value,
-          date_arrivee: document.getElementById("create-date-arrivee").value,
-          date_depart: document.getElementById("create-date-depart").value,
-          nombre_personnes: document.getElementById("create-nombre-personnes")
-            .value,
-          commentaire: document.getElementById("create-commentaire").value,
-          chambres: selectedChambres,
-        };
-
-        try {
-          const response = await fetch("admin-reservations.php?action=create", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(formData),
-          });
-
-          const result = await response.json();
-
-          if (result.success) {
-            alert(
-              "Réservation créée avec succès! ID: " + result.reservation_id
-            );
-            resetCreateForm();
-            loadReservations();
-            showSection("list");
-          } else {
-            alert("Erreur: " + result.error);
-          }
-        } catch (error) {
-          console.error("Erreur:", error);
-          alert("Erreur lors de la création de la réservation");
-        }
-      }*/
-
+      
       async function createReservation() {
         const formData = {
           nom: document.getElementById("create-nom").value,
@@ -912,32 +811,7 @@ if (!isLoggedIn()) {
         }
       }
 
-      /*async function deleteReservation(id) {
-        if (!confirm("Êtes-vous sûr de vouloir supprimer cette réservation ?"))
-          return;
-
-        try {
-          const response = await fetch(
-            `admin-reservations.php?action=delete&id=${id}`,
-            {
-              method: "DELETE",
-            }
-          );
-
-          const result = await response.json();
-
-          if (result.success) {
-            alert("Réservation supprimée avec succès!");
-            loadReservations();
-          } else {
-            alert("Erreur: " + result.error);
-          }
-        } catch (error) {
-          console.error("Erreur:", error);
-          alert("Erreur lors de la suppression de la réservation");
-        }
-      }*/
-
+      
       async function deleteReservation(id) {
         if (!confirm("Êtes-vous sûr de vouloir supprimer cette réservation ?"))
           return;
