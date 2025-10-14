@@ -165,13 +165,7 @@ class AdminReservations {
     }
 }
 
-// Vérifier l'authentification admin (à décommenter en production)
-/*
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
-    echo json_encode(['success' => false, 'error' => 'Non authentifié']);
-    exit;
-}
-*/
+
 
 // Traitement des requêtes
 try {
