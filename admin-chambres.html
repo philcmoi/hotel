@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="fr">
-<head>
+  <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gestion des Chambres - Hôtel</title>
@@ -680,7 +680,7 @@
         </div>
         <ul class="nav-links">
           <li>
-            <a href="admin-reservations.html"
+            <a href="admin-interface.php"
               ><i class="fas fa-tachometer-alt"></i> Tableau de bord</a
             >
           </li>
@@ -688,19 +688,25 @@
             <a href="#"><i class="fas fa-bed"></i> Chambres</a>
           </li>
           <li>
-            <a href="admin-reservations.html"><i class="fas fa-calendar-check"></i> Réservations</a>
+            <a href="admin-reservations.php"
+              ><i class="fas fa-calendar-check"></i> Réservations</a
+            >
           </li>
           <li>
-            <a href="#"><i class="fas fa-users"></i> Clients</a>
+            <a href="admin-clients.php"><i class="fas fa-users"></i> Clients</a>
           </li>
           <li>
-            <a href="#"><i class="fas fa-chart-bar"></i> Statistiques</a>
+            <a href="graphique-reservations.php"
+              ><i class="fas fa-chart-bar"></i> Statistiques</a
+            >
           </li>
           <li>
             <a href="#"><i class="fas fa-cog"></i> Paramètres</a>
           </li>
           <li>
-            <a href="#"><i class="fas fa-sign-out-alt"></i> Déconnexion</a>
+            <a href="logout.php"
+              ><i class="fas fa-sign-out-alt"></i> Déconnexion</a
+            >
           </li>
         </ul>
       </div>
@@ -784,9 +790,7 @@
         <!-- Chambres Table -->
         <div class="chambres-table-container">
           <div class="table-header">
-            <h3>
-              Liste des Chambres <span id="chambres-count">(0)</span>
-            </h3>
+            <h3>Liste des Chambres <span id="chambres-count">(0)</span></h3>
             <div class="table-actions">
               <button class="btn btn-outline" id="export-btn">
                 <i class="fas fa-download"></i> Exporter
@@ -847,10 +851,15 @@
         </div>
         <div class="modal-body">
           <form id="chambre-form">
-            <input type="hidden" id="chambre-id">
+            <input type="hidden" id="chambre-id" />
             <div class="form-group">
               <label for="numero-chambre">Numéro de chambre *</label>
-              <input type="text" id="numero-chambre" class="form-control" required>
+              <input
+                type="text"
+                id="numero-chambre"
+                class="form-control"
+                required
+              />
             </div>
             <div class="form-group">
               <label for="type-chambre">Type de chambre *</label>
@@ -862,19 +871,37 @@
             </div>
             <div class="form-group">
               <label for="capacite-chambre">Capacité (personnes) *</label>
-              <input type="number" id="capacite-chambre" class="form-control" min="1" max="10" required>
+              <input
+                type="number"
+                id="capacite-chambre"
+                class="form-control"
+                min="1"
+                max="10"
+                required
+              />
             </div>
             <div class="form-group">
               <label for="prix-chambre">Prix par nuit (€) *</label>
-              <input type="number" id="prix-chambre" class="form-control" step="0.01" min="0" required>
+              <input
+                type="number"
+                id="prix-chambre"
+                class="form-control"
+                step="0.01"
+                min="0"
+                required
+              />
             </div>
             <div class="form-group">
               <label for="description-chambre">Description</label>
-              <textarea id="description-chambre" class="form-control" rows="3"></textarea>
+              <textarea
+                id="description-chambre"
+                class="form-control"
+                rows="3"
+              ></textarea>
             </div>
             <div class="form-group">
               <label>
-                <input type="checkbox" id="disponible-chambre" checked>
+                <input type="checkbox" id="disponible-chambre" checked />
                 Chambre disponible
               </label>
             </div>
@@ -882,7 +909,9 @@
         </div>
         <div class="modal-footer">
           <button class="btn btn-outline" id="cancel-btn">Annuler</button>
-          <button class="btn btn-primary" id="save-chambre-btn">Enregistrer</button>
+          <button class="btn btn-primary" id="save-chambre-btn">
+            Enregistrer
+          </button>
         </div>
       </div>
     </div>
@@ -892,7 +921,7 @@
       let currentPage = 1;
       let totalChambres = 0;
       const itemsPerPage = 10;
-      let currentAction = 'add'; // 'add' ou 'edit'
+      let currentAction = "add"; // 'add' ou 'edit'
 
       // Charger les données au démarrage
       document.addEventListener("DOMContentLoaded", function () {
@@ -905,9 +934,7 @@
       async function loadStats() {
         try {
           showLoading("stats");
-          const response = await fetch(
-            "admin-chambres.php?action=get_stats"
-          );
+          const response = await fetch("admin-chambres.php?action=get_stats");
           const result = await response.json();
 
           if (result.success) {
@@ -996,12 +1023,16 @@
             <td class="chambre-id">#CH-${chambre.idChambre}</td>
             <td>
               <div class="chambre-info">
-                <span class="chambre-numero">${escapeHtml(chambre.numeroChambre)}</span>
+                <span class="chambre-numero">${escapeHtml(
+                  chambre.numeroChambre
+                )}</span>
               </div>
             </td>
             <td>
               <div class="chambre-info">
-                <span class="chambre-type">${escapeHtml(chambre.type_chambre)}</span>
+                <span class="chambre-type">${escapeHtml(
+                  chambre.type_chambre
+                )}</span>
               </div>
             </td>
             <td>${chambre.capacite}</td>
@@ -1013,30 +1044,44 @@
             </td>
             <td>
               <div class="reservation-list">
-                ${chambre.reservations && chambre.reservations.length > 0 
-                  ? chambre.reservations.map(reservation => `
+                ${
+                  chambre.reservations && chambre.reservations.length > 0
+                    ? chambre.reservations
+                        .map(
+                          (reservation) => `
                     <div class="reservation-item">
-                      <div class="reservation-dates">${formatDate(reservation.date_arrivee)} - ${formatDate(reservation.date_depart)}</div>
-                      <div class="reservation-client">${escapeHtml(reservation.nom)} ${escapeHtml(reservation.prenom)}</div>
+                      <div class="reservation-dates">${formatDate(
+                        reservation.date_arrivee
+                      )} - ${formatDate(reservation.date_depart)}</div>
+                      <div class="reservation-client">${escapeHtml(
+                        reservation.nom
+                      )} ${escapeHtml(reservation.prenom)}</div>
                     </div>
-                  `).join('')
-                  : '<div class="reservation-item">Aucune réservation</div>'
+                  `
+                        )
+                        .join("")
+                    : '<div class="reservation-item">Aucune réservation</div>'
                 }
               </div>
             </td>
             <td>
               <div class="actions">
-                <button class="action-btn" title="Voir les détails" onclick="viewChambre(${chambre.idChambre})">
+                <button class="action-btn" title="Voir les détails" onclick="viewChambre(${
+                  chambre.idChambre
+                })">
                   <i class="fas fa-eye"></i>
                 </button>
-                <button class="action-btn" title="Modifier" onclick="editChambre(${chambre.idChambre})">
+                <button class="action-btn" title="Modifier" onclick="editChambre(${
+                  chambre.idChambre
+                })">
                   <i class="fas fa-edit"></i>
                 </button>
-                ${chambre.statut === 'maintenance' 
-                  ? `<button class="action-btn" title="Rendre disponible" onclick="updateChambreStatus(${chambre.idChambre}, 'disponible')">
+                ${
+                  chambre.statut === "maintenance"
+                    ? `<button class="action-btn" title="Rendre disponible" onclick="updateChambreStatus(${chambre.idChambre}, 'disponible')">
                       <i class="fas fa-check"></i>
                     </button>`
-                  : `<button class="action-btn" title="Mettre en maintenance" onclick="updateChambreStatus(${chambre.idChambre}, 'maintenance')">
+                    : `<button class="action-btn" title="Mettre en maintenance" onclick="updateChambreStatus(${chambre.idChambre}, 'maintenance')">
                       <i class="fas fa-tools"></i>
                     </button>`
                 }
@@ -1118,14 +1163,20 @@
         document
           .getElementById("add-chambre-btn")
           .addEventListener("click", () => {
-            currentAction = 'add';
+            currentAction = "add";
             showChambreModal();
           });
 
         // Modal events
-        document.getElementById("close-modal").addEventListener("click", hideChambreModal);
-        document.getElementById("cancel-btn").addEventListener("click", hideChambreModal);
-        document.getElementById("save-chambre-btn").addEventListener("click", saveChambre);
+        document
+          .getElementById("close-modal")
+          .addEventListener("click", hideChambreModal);
+        document
+          .getElementById("cancel-btn")
+          .addEventListener("click", hideChambreModal);
+        document
+          .getElementById("save-chambre-btn")
+          .addEventListener("click", saveChambre);
       }
 
       // Fonctions utilitaires
@@ -1219,7 +1270,10 @@
 
       // Fonctions d'action
       async function updateChambreStatus(chambreId, newStatus) {
-        const actionText = newStatus === "disponible" ? "rendre disponible" : "mettre en maintenance";
+        const actionText =
+          newStatus === "disponible"
+            ? "rendre disponible"
+            : "mettre en maintenance";
 
         if (
           !confirm(`Êtes-vous sûr de vouloir ${actionText} cette chambre ?`)
@@ -1244,7 +1298,11 @@
 
           if (result.success) {
             showSuccess(
-              `Chambre ${actionText === "rendre disponible" ? "rendue disponible" : "mise en maintenance"} avec succès`
+              `Chambre ${
+                actionText === "rendre disponible"
+                  ? "rendue disponible"
+                  : "mise en maintenance"
+              } avec succès`
             );
             // Recharger les données
             loadStats();
@@ -1265,14 +1323,18 @@
 
       async function editChambre(chambreId) {
         try {
-          const response = await fetch(`admin-chambres.php?action=get_chambre&id=${chambreId}`);
+          const response = await fetch(
+            `admin-chambres.php?action=get_chambre&id=${chambreId}`
+          );
           const result = await response.json();
 
           if (result.success) {
-            currentAction = 'edit';
+            currentAction = "edit";
             showChambreModal(result.data);
           } else {
-            showError("Erreur lors du chargement de la chambre: " + result.error);
+            showError(
+              "Erreur lors du chargement de la chambre: " + result.error
+            );
           }
         } catch (error) {
           console.error("Erreur:", error);
@@ -1289,12 +1351,15 @@
           // Mode édition
           title.textContent = "Modifier la chambre";
           document.getElementById("chambre-id").value = chambre.idChambre;
-          document.getElementById("numero-chambre").value = chambre.numeroChambre;
+          document.getElementById("numero-chambre").value =
+            chambre.numeroChambre;
           document.getElementById("type-chambre").value = chambre.type_chambre;
           document.getElementById("capacite-chambre").value = chambre.capacite;
           document.getElementById("prix-chambre").value = chambre.prix_nuit;
-          document.getElementById("description-chambre").value = chambre.description;
-          document.getElementById("disponible-chambre").checked = chambre.disponible == 1;
+          document.getElementById("description-chambre").value =
+            chambre.description;
+          document.getElementById("disponible-chambre").checked =
+            chambre.disponible == 1;
         } else {
           // Mode ajout
           title.textContent = "Nouvelle chambre";
@@ -1324,14 +1389,16 @@
           capacite: parseInt(document.getElementById("capacite-chambre").value),
           prix: parseFloat(document.getElementById("prix-chambre").value),
           description: document.getElementById("description-chambre").value,
-          disponible: document.getElementById("disponible-chambre").checked ? 1 : 0
+          disponible: document.getElementById("disponible-chambre").checked
+            ? 1
+            : 0,
         };
 
-        if (currentAction === 'edit') {
+        if (currentAction === "edit") {
           chambreData.chambre_id = document.getElementById("chambre-id").value;
-          chambreData.action = 'update_chambre';
+          chambreData.action = "update_chambre";
         } else {
-          chambreData.action = 'add_chambre';
+          chambreData.action = "add_chambre";
         }
 
         try {
@@ -1347,7 +1414,9 @@
 
           if (result.success) {
             showSuccess(
-              `Chambre ${currentAction === 'add' ? 'ajoutée' : 'modifiée'} avec succès`
+              `Chambre ${
+                currentAction === "add" ? "ajoutée" : "modifiée"
+              } avec succès`
             );
             hideChambreModal();
             // Recharger les données

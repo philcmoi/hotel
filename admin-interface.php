@@ -544,7 +544,7 @@ try {
                     <div class="action-description">
                         Configurez les chambres, leurs disponibilités et leurs tarifs
                     </div>
-                    <a href="admin-chambres.php" class="btn-action">Gérer les Chambres</a>
+                    <a href="admin-chambres.html" class="btn-action">Gérer les Chambres</a>
                 </div>
 
                 <div class="action-card">
