@@ -43,8 +43,8 @@ try {
     $stmt->execute(['admin', $password_hash, 'admin@hotel.com', 'admin']);
     
     echo "✅ Utilisateur admin créé avec succès!<br>";
-    echo "Nom d'utilisateur: <strong>admin</strong><br>";
-    echo "Mot de passe: <strong>L099339R</strong><br>";
+    echo "Nom d'utilisateur: <strong></strong><br>";
+    echo "Mot de passe: <strong></strong><br>";
     echo "Hash utilisé: " . $password_hash . "<br>";
     
     // Vérifier que ça fonctionne

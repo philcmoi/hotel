@@ -1,7 +1,21 @@
 <?php
+session_start();
+
+error_log("=== Admin Chambres Request ===");
+error_log("Method: " . $_SERVER['REQUEST_METHOD']);
+error_log("GET: " . print_r($_GET, true));
+error_log("POST raw: " . file_get_contents('php://input'));
+
 // admin-chambres.php
 header('Content-Type: application/json');
 require_once 'config.php';
+
+if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
+    error_log("Authentification échouée - Session: " . print_r($_SESSION, true));
+    echo json_encode(['success' => false, 'error' => 'Non authentifié - Veuillez vous reconnecter']);
+    exit;
+}
+
 
 // Classe Database intégrée
 class Database {
@@ -235,57 +249,62 @@ class AdminChambres {
     }
 }
 
-// Vérifier l'authentification
-session_start();
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
-    echo json_encode(['success' => false, 'error' => 'Non authentifié']);
-    exit;
-}
-
-// Traitement des requêtes
-$admin = new AdminChambres();
-$response = ['success' => false, 'error' => 'Action non reconnue'];
-
 try {
-    if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action'])) {
-        switch ($_GET['action']) {
-            case 'get_stats':
-                $stats = $admin->getChambreStats();
-                $response = ['success' => true, 'data' => $stats];
-                break;
-                
-            case 'get_chambres':
-                $page = $_GET['page'] ?? 1;
-                $status = $_GET['status'] ?? 'all';
-                $type = $_GET['type'] ?? 'all';
-                $search = $_GET['search'] ?? '';
-                
-                $filters = [
-                    'status' => $status,
-                    'type' => $type,
-                    'search' => $search
-                ];
-                
-                $result = $admin->getAllChambres($page, 10, $filters);
-                $response = [
-                    'success' => true, 
-                    'data' => $result['chambres'],
-                    'total' => $result['total']
-                ];
-                break;
+    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        if (isset($_GET['action'])) {
+            switch ($_GET['action']) {
+                case 'get_stats':
+                    $stats = $admin->getChambreStats();
+                    $response = ['success' => true, 'data' => $stats];
+                    break;
+                    
+                case 'get_chambres':
+                    $page = $_GET['page'] ?? 1;
+                    $status = $_GET['status'] ?? 'all';
+                    $type = $_GET['type'] ?? 'all';
+                    $search = $_GET['search'] ?? '';
+                    
+                    $filters = [
+                        'status' => $status,
+                        'type' => $type,
+                        'search' => $search
+                    ];
+                    
+                    $result = $admin->getAllChambres($page, 10, $filters);
+                    $response = [
+                        'success' => true, 
+                        'data' => $result['chambres'],
+                        'total' => $result['total']
+                    ];
+                    break;
 
-            case 'get_chambre':
-                if (isset($_GET['id'])) {
-                    $chambre = $admin->getChambreById($_GET['id']);
-                    $response = ['success' => true, 'data' => $chambre];
-                }
-                break;
+                case 'get_chambre':
+                    if (isset($_GET['id'])) {
+                        $chambre = $admin->getChambreById($_GET['id']);
+                        if ($chambre) {
+                            $response = ['success' => true, 'data' => $chambre];
+                        } else {
+                            $response = ['success' => false, 'error' => 'Chambre non trouvée'];
+                        }
+                    } else {
+                        $response = ['success' => false, 'error' => 'ID chambre manquant'];
+                    }
+                    break;
+
+                default:
+                    $response = ['success' => false, 'error' => 'Action GET non reconnue: ' . $_GET['action']];
+                    break;
+            }
+        } else {
+            $response = ['success' => false, 'error' => 'Paramètre action manquant dans la requête GET'];
         }
     } 
     elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $input = json_decode(file_get_contents('php://input'), true);
         
-        if (isset($input['action'])) {
+        if ($input === null) {
+            $response = ['success' => false, 'error' => 'Données JSON invalides'];
+        } elseif (isset($input['action'])) {
             switch ($input['action']) {
                 case 'update_status':
                     if (isset($input['chambre_id']) && isset($input['status'])) {
@@ -293,8 +312,10 @@ try {
                         $success = $admin->updateChambreStatus($input['chambre_id'], $disponible);
                         $response = ['success' => $success];
                         if (!$success) {
-                            $response['error'] = 'Erreur lors de la mise à jour';
+                            $response['error'] = 'Erreur lors de la mise à jour du statut';
                         }
+                    } else {
+                        $response = ['success' => false, 'error' => 'Paramètres manquants pour update_status'];
                     }
                     break;
 
@@ -312,6 +333,8 @@ try {
                         if (!$success) {
                             $response['error'] = 'Erreur lors de l\'ajout de la chambre';
                         }
+                    } else {
+                        $response = ['success' => false, 'error' => 'Paramètres manquants pour add_chambre'];
                     }
                     break;
 
@@ -329,14 +352,26 @@ try {
                         if (!$success) {
                             $response['error'] = 'Erreur lors de la modification de la chambre';
                         }
+                    } else {
+                        $response = ['success' => false, 'error' => 'Paramètres manquants pour update_chambre'];
                     }
                     break;
+
+                default:
+                    $response = ['success' => false, 'error' => 'Action POST non reconnue: ' . $input['action']];
+                    break;
             }
+        } else {
+            $response = ['success' => false, 'error' => 'Action manquante dans les données POST'];
         }
     }
+    else {
+        $response = ['success' => false, 'error' => 'Méthode HTTP non supportée: ' . $_SERVER['REQUEST_METHOD']];
+    }
 } catch (Exception $e) {
-    $response = ['success' => false, 'error' => $e->getMessage()];
+    error_log("Erreur dans admin-chambres.php: " . $e->getMessage());
+    $response = ['success' => false, 'error' => 'Erreur serveur: ' . $e->getMessage()];
 }
 
-echo json_encode($response);
+//echo json_encode($response);
 ?>
