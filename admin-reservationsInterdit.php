@@ -1,9 +1,39 @@
+<?php
+session_start();
+
+// Vérification robuste de l'authentification
+if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
+    // Redirection vers la page de connexion
+    header('Location: login.php');
+    exit;
+}
+
+// Protection contre la fixation de session
+session_regenerate_id(true);
+
+// Déconnexion automatique après 30 minutes d'inactivité
+$timeout = 1800; // 30 minutes en secondes
+if (isset($_SESSION['login_time']) && (time() - $_SESSION['login_time']) > $timeout) {
+    session_unset();
+    session_destroy();
+    header('Location: login.php?timeout=1');
+    exit;
+}
+
+// Mettre à jour le temps d'activité
+$_SESSION['login_time'] = time();
+
+header('Access-Control-Allow-Origin: http://localhost');
+header('Access-Control-Allow-Credentials: true');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+?>
 <!DOCTYPE html>
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gestion des Chambres - Hôtel</title>
+    <title>Administration des Réservations - Hôtel</title>
     <style>
       :root {
         --primary: #4361ee;
@@ -160,15 +190,15 @@
         border-top: 4px solid #4361ee;
       }
 
-      .stat-card.available {
+      .stat-card.confirmed {
         border-top: 4px solid #4cc9f0;
       }
 
-      .stat-card.occupied {
+      .stat-card.pending {
         border-top: 4px solid #f72585;
       }
 
-      .stat-card.maintenance {
+      .stat-card.cancelled {
         border-top: 4px solid #6c757d;
       }
 
@@ -257,8 +287,8 @@
         color: var(--gray);
       }
 
-      /* Chambres Table */
-      .chambres-table-container {
+      /* Reservations Table */
+      .reservations-table-container {
         background: white;
         border-radius: 10px;
         overflow: hidden;
@@ -343,9 +373,23 @@
         background-color: #f8f9fa;
       }
 
-      .chambre-id {
+      .reservation-id {
         font-weight: 600;
         color: var(--primary);
+      }
+
+      .client-info {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .client-name {
+        font-weight: 600;
+      }
+
+      .client-email {
+        font-size: 0.85rem;
+        color: var(--gray);
       }
 
       .chambre-info {
@@ -362,6 +406,20 @@
         color: var(--gray);
       }
 
+      .date-info {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .date-range {
+        font-weight: 600;
+      }
+
+      .nights {
+        font-size: 0.85rem;
+        color: var(--gray);
+      }
+
       .status {
         padding: 5px 10px;
         border-radius: 20px;
@@ -371,17 +429,17 @@
         display: inline-block;
       }
 
-      .status.available {
+      .status.confirmed {
         background-color: rgba(76, 201, 240, 0.1);
         color: #4cc9f0;
       }
 
-      .status.occupied {
+      .status.pending {
         background-color: rgba(247, 37, 133, 0.1);
         color: #f72585;
       }
 
-      .status.maintenance {
+      .status.cancelled {
         background-color: rgba(108, 117, 125, 0.1);
         color: #6c757d;
       }
@@ -410,109 +468,6 @@
       .action-btn:hover {
         color: var(--primary);
         background-color: rgba(67, 97, 238, 0.1);
-      }
-
-      .reservation-list {
-        max-height: 150px;
-        overflow-y: auto;
-      }
-
-      .reservation-item {
-        padding: 8px 0;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-      }
-
-      .reservation-item:last-child {
-        border-bottom: none;
-      }
-
-      .reservation-dates {
-        font-weight: 600;
-        font-size: 0.9rem;
-      }
-
-      .reservation-client {
-        font-size: 0.8rem;
-        color: var(--gray);
-      }
-
-      /* Modal */
-      .modal {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0, 0, 0, 0.5);
-        z-index: 1000;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .modal-content {
-        background: white;
-        border-radius: 10px;
-        width: 90%;
-        max-width: 500px;
-        max-height: 90vh;
-        overflow-y: auto;
-      }
-
-      .modal-header {
-        padding: 20px;
-        border-bottom: 1px solid var(--border);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-
-      .modal-header h3 {
-        margin: 0;
-      }
-
-      .modal-body {
-        padding: 20px;
-      }
-
-      .modal-footer {
-        padding: 20px;
-        border-top: 1px solid var(--border);
-        display: flex;
-        justify-content: flex-end;
-        gap: 10px;
-      }
-
-      .close-btn {
-        background: none;
-        border: none;
-        font-size: 1.5rem;
-        cursor: pointer;
-        color: var(--gray);
-      }
-
-      .form-group {
-        margin-bottom: 15px;
-      }
-
-      .form-group label {
-        display: block;
-        margin-bottom: 5px;
-        font-weight: 500;
-        color: var(--dark);
-      }
-
-      .form-control {
-        width: 100%;
-        padding: 8px 12px;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        font-size: 0.9rem;
-      }
-
-      .form-control:focus {
-        outline: none;
-        border-color: var(--primary);
       }
 
       /* Pagination */
@@ -638,7 +593,7 @@
           align-items: flex-start;
         }
 
-        .chambres-table-container {
+        .reservations-table-container {
           overflow-x: auto;
         }
 
@@ -679,34 +634,28 @@
           <h1>Hôtel<span>Premium</span></h1>
         </div>
         <ul class="nav-links">
-          <li>
-            <a href="admin-interface.php"
+          <li class="active">
+            <a href="#"
               ><i class="fas fa-tachometer-alt"></i> Tableau de bord</a
             >
           </li>
-          <li class="active">
+          <!--<li>
             <a href="#"><i class="fas fa-bed"></i> Chambres</a>
+          </li>-->
+          <li>
+            <a href="#"><i class="fas fa-calendar-check"></i> Réservations</a>
           </li>
           <li>
-            <a href="admin-reservations.php"
-              ><i class="fas fa-calendar-check"></i> Réservations</a
-            >
+            <a href="#"><i class="fas fa-users"></i> Clients</a>
           </li>
           <li>
-            <a href="admin-clients.php"><i class="fas fa-users"></i> Clients</a>
-          </li>
-          <li>
-            <a href="graphique-reservations.php"
-              ><i class="fas fa-chart-bar"></i> Statistiques</a
-            >
+            <a href="#"><i class="fas fa-chart-bar"></i> Statistiques</a>
           </li>
           <li>
             <a href="#"><i class="fas fa-cog"></i> Paramètres</a>
           </li>
           <li>
-            <a href="logout.php"
-              ><i class="fas fa-sign-out-alt"></i> Déconnexion</a
-            >
+            <a href="#"><i class="fas fa-sign-out-alt"></i> Déconnexion</a>
           </li>
         </ul>
       </div>
@@ -714,7 +663,7 @@
       <!-- Main Content -->
       <div class="main-content">
         <div class="header">
-          <h2>Gestion des Chambres</h2>
+          <h2>Gestion des Réservations</h2>
           <div class="user-info">
             <div class="user-avatar">AD</div>
             <span>Admin</span>
@@ -728,30 +677,30 @@
         <!-- Stats Cards -->
         <div class="stats-container">
           <div class="stat-card total">
-            <div class="stat-label">Total des Chambres</div>
+            <div class="stat-label">Total des Réservations</div>
             <div class="stat-value" id="stat-total">0</div>
             <div class="stat-trend positive" id="stat-total-trend">
               <i class="fas fa-arrow-up"></i> <span>0%</span> ce mois
             </div>
           </div>
-          <div class="stat-card available">
-            <div class="stat-label">Disponibles</div>
-            <div class="stat-value" id="stat-available">0</div>
-            <div class="stat-trend positive" id="stat-available-trend">
+          <div class="stat-card confirmed">
+            <div class="stat-label">Confirmées</div>
+            <div class="stat-value" id="stat-confirmed">0</div>
+            <div class="stat-trend positive" id="stat-confirmed-trend">
               <i class="fas fa-arrow-up"></i> <span>0%</span> ce mois
             </div>
           </div>
-          <div class="stat-card occupied">
-            <div class="stat-label">Occupées</div>
-            <div class="stat-value" id="stat-occupied">0</div>
-            <div class="stat-trend negative" id="stat-occupied-trend">
+          <div class="stat-card pending">
+            <div class="stat-label">En Attente</div>
+            <div class="stat-value" id="stat-pending">0</div>
+            <div class="stat-trend negative" id="stat-pending-trend">
               <i class="fas fa-arrow-down"></i> <span>0%</span> ce mois
             </div>
           </div>
-          <div class="stat-card maintenance">
-            <div class="stat-label">En Maintenance</div>
-            <div class="stat-value" id="stat-maintenance">0</div>
-            <div class="stat-trend positive" id="stat-maintenance-trend">
+          <div class="stat-card cancelled">
+            <div class="stat-label">Annulées</div>
+            <div class="stat-value" id="stat-cancelled">0</div>
+            <div class="stat-trend positive" id="stat-cancelled-trend">
               <i class="fas fa-arrow-up"></i> <span>0%</span> ce mois
             </div>
           </div>
@@ -763,18 +712,9 @@
             <label for="status-filter">Statut</label>
             <select id="status-filter" class="filter-select">
               <option value="all">Tous les statuts</option>
-              <option value="disponible">Disponible</option>
-              <option value="occupee">Occupée</option>
-              <option value="maintenance">Maintenance</option>
-            </select>
-          </div>
-          <div class="filter-group">
-            <label for="type-filter">Type</label>
-            <select id="type-filter" class="filter-select">
-              <option value="all">Tous les types</option>
-              <option value="standard">Standard</option>
-              <option value="deluxe">Deluxe</option>
-              <option value="suite">Suite</option>
+              <option value="confirme">Confirmées</option>
+              <option value="en attente">En attente</option>
+              <option value="annulee">Annulées</option>
             </select>
           </div>
           <div class="search-box">
@@ -782,42 +722,48 @@
             <input
               type="text"
               id="search-input"
-              placeholder="Rechercher une chambre..."
+              placeholder="Rechercher une réservation..."
             />
           </div>
         </div>
 
-        <!-- Chambres Table -->
-        <div class="chambres-table-container">
+        <!-- Reservations Table -->
+        <div class="reservations-table-container">
           <div class="table-header">
-            <h3>Liste des Chambres <span id="chambres-count">(0)</span></h3>
+            <h3>
+              Liste des Réservations <span id="reservations-count">(0)</span>
+            </h3>
             <div class="table-actions">
               <button class="btn btn-outline" id="export-btn">
                 <i class="fas fa-download"></i> Exporter
               </button>
-              <button class="btn btn-primary" id="add-chambre-btn">
-                <i class="fas fa-plus"></i> Nouvelle Chambre
-              </button>
+              <a
+                href="reservation.html"
+                class="btn btn-primary"
+                target="_blank"
+              >
+                <i class="fas fa-plus"></i> Nouvelle Réservation
+              </a>
             </div>
           </div>
 
           <table>
             <thead>
               <tr>
-                <th>ID Chambre</th>
-                <th>Numéro</th>
-                <th>Type</th>
-                <th>Capacité</th>
-                <th>Prix/Nuit</th>
+                <th>ID Réservation</th>
+                <th>Client</th>
+                <th>Chambre</th>
+                <th>Dates</th>
+                <th>Personnes</th>
+                <th>Prix</th>
                 <th>Statut</th>
-                <th>Réservations</th>
                 <th>Actions</th>
               </tr>
             </thead>
-            <tbody id="chambres-body">
+            <tbody id="reservations-body">
               <tr>
                 <td colspan="8" style="text-align: center; padding: 40px">
-                  Chargement des chambres...
+                  Chargement des réservations...
                 </td>
               </tr>
             </tbody>
@@ -842,91 +788,16 @@
       </div>
     </div>
 
-    <!-- Modal pour ajouter/modifier une chambre -->
-    <div class="modal" id="chambre-modal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3 id="modal-title">Nouvelle Chambre</h3>
-          <button class="close-btn" id="close-modal">&times;</button>
-        </div>
-        <div class="modal-body">
-          <form id="chambre-form">
-            <input type="hidden" id="chambre-id" />
-            <div class="form-group">
-              <label for="numero-chambre">Numéro de chambre *</label>
-              <input
-                type="text"
-                id="numero-chambre"
-                class="form-control"
-                required
-              />
-            </div>
-            <div class="form-group">
-              <label for="type-chambre">Type de chambre *</label>
-              <select id="type-chambre" class="form-control" required>
-                <option value="standard">Standard</option>
-                <option value="deluxe">Deluxe</option>
-                <option value="suite">Suite</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="capacite-chambre">Capacité (personnes) *</label>
-              <input
-                type="number"
-                id="capacite-chambre"
-                class="form-control"
-                min="1"
-                max="10"
-                required
-              />
-            </div>
-            <div class="form-group">
-              <label for="prix-chambre">Prix par nuit (€) *</label>
-              <input
-                type="number"
-                id="prix-chambre"
-                class="form-control"
-                step="0.01"
-                min="0"
-                required
-              />
-            </div>
-            <div class="form-group">
-              <label for="description-chambre">Description</label>
-              <textarea
-                id="description-chambre"
-                class="form-control"
-                rows="3"
-              ></textarea>
-            </div>
-            <div class="form-group">
-              <label>
-                <input type="checkbox" id="disponible-chambre" checked />
-                Chambre disponible
-              </label>
-            </div>
-          </form>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-outline" id="cancel-btn">Annuler</button>
-          <button class="btn btn-primary" id="save-chambre-btn">
-            Enregistrer
-          </button>
-        </div>
-      </div>
-    </div>
-
     <script>
       // Variables globales
       let currentPage = 1;
-      let totalChambres = 0;
+      let totalReservations = 0;
       const itemsPerPage = 10;
-      let currentAction = "add"; // 'add' ou 'edit'
 
       // Charger les données au démarrage
       document.addEventListener("DOMContentLoaded", function () {
         loadStats();
-        loadChambres();
+        loadReservations();
         setupEventListeners();
       });
 
@@ -934,7 +805,9 @@
       async function loadStats() {
         try {
           showLoading("stats");
-          const response = await fetch("admin-chambres.php?action=get_stats");
+          const response = await fetch(
+            "admin-reservations.php?action=get_stats"
+          );
           const result = await response.json();
 
           if (result.success) {
@@ -951,158 +824,189 @@
           hideLoading("stats");
         }
       }
-
-      // Charger les chambres
-      async function loadChambres(page = 1) {
+      // Charger les réservations
+      async function loadReservations(page = 1) {
         try {
-          showLoading("chambres");
+          showLoading("reservations");
           const statusFilter = document.getElementById("status-filter").value;
-          const typeFilter = document.getElementById("type-filter").value;
           const searchTerm = document.getElementById("search-input").value;
 
           const params = new URLSearchParams({
-            action: "get_chambres",
+            action: "get_reservations",
             page: page,
             status: statusFilter,
-            type: typeFilter,
             search: searchTerm,
           });
 
-          const response = await fetch(`admin-chambres.php?${params}`);
+          console.log("Chargement des réservations...");
+          const response = await fetch(`admin-reservations.php?${params}`);
+
+          if (!response.ok) {
+            throw new Error(`Erreur HTTP: ${response.status}`);
+          }
+
           const result = await response.json();
+          console.log("Résultat reçu:", result);
 
           if (result.success) {
-            updateChambresDisplay(result.data);
+            updateReservationsDisplay(result.data);
             updatePagination(result.total, page);
             document.getElementById(
-              "chambres-count"
+              "reservations-count"
             ).textContent = `(${result.data.length})`;
           } else {
             showError(
-              "Erreur lors du chargement des chambres: " + result.error
+              "Erreur lors du chargement des réservations: " +
+                (result.error || "Erreur inconnue")
             );
           }
         } catch (error) {
           console.error("Erreur:", error);
-          showError("Erreur de connexion au serveur");
+          showError("Erreur de connexion au serveur: " + error.message);
+
+          // Afficher un message d'erreur dans le tableau
+          const tbody = document.getElementById("reservations-body");
+          tbody.innerHTML = `
+            <tr>
+                <td colspan="8" style="text-align: center; padding: 40px; color: #ff4757;">
+                    Erreur de chargement: ${error.message}<br>
+                    <button onclick="loadReservations(1)" style="margin-top: 10px; padding: 8px 16px; background: #4361ee; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        Réessayer
+                    </button>
+                </td>
+            </tr>
+        `;
         } finally {
-          hideLoading("chambres");
+          hideLoading("reservations");
         }
       }
 
-      // Mettre à jour l'affichage des statistiques
-      function updateStatsDisplay(stats) {
-        document.getElementById("stat-total").textContent = stats.total || 0;
-        document.getElementById("stat-available").textContent =
-          stats.available || 0;
-        document.getElementById("stat-occupied").textContent =
-          stats.occupied || 0;
-        document.getElementById("stat-maintenance").textContent =
-          stats.maintenance || 0;
-      }
+      // Mettre à jour l'affichage des réservations
+      function updateReservationsDisplay(reservations) {
+        const tbody = document.getElementById("reservations-body");
 
-      // Mettre à jour l'affichage des chambres
-      function updateChambresDisplay(chambres) {
-        const tbody = document.getElementById("chambres-body");
-
-        if (chambres.length === 0) {
+        if (reservations.length === 0) {
           tbody.innerHTML = `
             <tr>
-              <td colspan="8" style="text-align: center; padding: 40px;">
-                Aucune chambre trouvée
-              </td>
+                <td colspan="8" style="text-align: center; padding: 40px;">
+                    Aucune réservation trouvée
+                </td>
             </tr>
-          `;
+        `;
           return;
         }
 
-        tbody.innerHTML = chambres
-          .map(
-            (chambre) => `
-          <tr>
-            <td class="chambre-id">#CH-${chambre.idChambre}</td>
-            <td>
-              <div class="chambre-info">
-                <span class="chambre-numero">${escapeHtml(
-                  chambre.numeroChambre
-                )}</span>
-              </div>
-            </td>
-            <td>
-              <div class="chambre-info">
-                <span class="chambre-type">${escapeHtml(
-                  chambre.type_chambre
-                )}</span>
-              </div>
-            </td>
-            <td>${chambre.capacite}</td>
-            <td class="price">${formatPrice(chambre.prix_nuit)} €</td>
-            <td>
-              <span class="status ${getStatusClass(chambre.statut)}">
-                ${getStatusText(chambre.statut)}
-              </span>
-            </td>
-            <td>
-              <div class="reservation-list">
-                ${
-                  chambre.reservations && chambre.reservations.length > 0
-                    ? chambre.reservations
-                        .map(
-                          (reservation) => `
-                    <div class="reservation-item">
-                      <div class="reservation-dates">${formatDate(
-                        reservation.date_arrivee
-                      )} - ${formatDate(reservation.date_depart)}</div>
-                      <div class="reservation-client">${escapeHtml(
-                        reservation.nom
-                      )} ${escapeHtml(reservation.prenom)}</div>
-                    </div>
-                  `
-                        )
-                        .join("")
-                    : '<div class="reservation-item">Aucune réservation</div>'
-                }
-              </div>
-            </td>
-            <td>
-              <div class="actions">
-                <button class="action-btn" title="Voir les détails" onclick="viewChambre(${
-                  chambre.idChambre
-                })">
-                  <i class="fas fa-eye"></i>
-                </button>
-                <button class="action-btn" title="Modifier" onclick="editChambre(${
-                  chambre.idChambre
-                })">
-                  <i class="fas fa-edit"></i>
-                </button>
-                ${
-                  chambre.statut === "maintenance"
-                    ? `<button class="action-btn" title="Rendre disponible" onclick="updateChambreStatus(${chambre.idChambre}, 'disponible')">
-                      <i class="fas fa-check"></i>
-                    </button>`
-                    : `<button class="action-btn" title="Mettre en maintenance" onclick="updateChambreStatus(${chambre.idChambre}, 'maintenance')">
-                      <i class="fas fa-tools"></i>
-                    </button>`
-                }
-              </div>
-            </td>
-          </tr>
-        `
-          )
+        tbody.innerHTML = reservations
+          .map((reservation) => {
+            // Déterminer quels boutons afficher en fonction du statut actuel
+            const isPending = reservation.etat_reservation === "en attente";
+            const isConfirmed = reservation.etat_reservation === "confirme";
+            const isCancelled = reservation.etat_reservation === "annulee";
+
+            let actionButtons = "";
+
+            // Bouton "Voir les détails" - toujours visible
+            actionButtons += `
+                    <button class="action-btn" title="Voir les détails" onclick="viewReservation(${reservation.idReservation})">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                `;
+
+            // Bouton "Confirmer" - visible seulement pour les réservations en attente
+            if (isPending) {
+              actionButtons += `
+                        <button class="action-btn" title="Confirmer" onclick="updateReservationStatus(${reservation.idReservation}, 'confirme', event)">
+                            <i class="fas fa-check" style="color: #2ed573;"></i>
+                        </button>
+                    `;
+            }
+
+            // Bouton "Annuler" - visible pour les réservations en attente ou confirmées
+            if (isPending || isConfirmed) {
+              actionButtons += `
+                        <button class="action-btn" title="Annuler" onclick="updateReservationStatus(${reservation.idReservation}, 'annulee', event)">
+                            <i class="fas fa-times" style="color: #ff4757;"></i>
+                        </button>
+                    `;
+            }
+
+            // Bouton "Remettre en attente" - visible pour les réservations annulées
+            if (isCancelled) {
+              actionButtons += `
+                        <button class="action-btn" title="Remettre en attente" onclick="updateReservationStatus(${reservation.idReservation}, 'en attente', event)">
+                            <i class="fas fa-clock" style="color: #ffa502;"></i>
+                        </button>
+                    `;
+            }
+
+            return `
+                <tr>
+                    <td class="reservation-id">#RES-${
+                      reservation.idReservation
+                    }</td>
+                    <td>
+                        <div class="client-info">
+                            <span class="client-name">${escapeHtml(
+                              reservation.prenom
+                            )} ${escapeHtml(reservation.nom)}</span>
+                            <span class="client-email">${escapeHtml(
+                              reservation.email
+                            )}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="chambre-info">
+                            <span class="chambre-numero">Chambre ${escapeHtml(
+                              reservation.numeroChambre
+                            )}</span>
+                            <span class="chambre-type">${escapeHtml(
+                              reservation.type_chambre
+                            )}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="date-info">
+                            <span class="date-range">${formatDate(
+                              reservation.date_arrivee
+                            )} - ${formatDate(reservation.date_depart)}</span>
+                            <span class="nights">${calculateNights(
+                              reservation.date_arrivee,
+                              reservation.date_depart
+                            )} nuits</span>
+                        </div>
+                    </td>
+                    <td>${reservation.nombre_personnes}</td>
+                    <td class="price">${formatPrice(
+                      reservation.prix_total
+                    )} €</td>
+                    <td>
+                        <span class="status ${getStatusClass(
+                          reservation.etat_reservation
+                        )}">
+                            ${getStatusText(reservation.etat_reservation)}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="actions">
+                            ${actionButtons}
+                        </div>
+                    </td>
+                </tr>
+                `;
+          })
           .join("");
       }
 
       // Mettre à jour la pagination
       function updatePagination(total, currentPage) {
-        totalChambres = total;
+        totalReservations = total;
         const totalPages = Math.ceil(total / itemsPerPage);
         const startItem = (currentPage - 1) * itemsPerPage + 1;
         const endItem = Math.min(currentPage * itemsPerPage, total);
 
         document.getElementById(
           "pagination-info"
-        ).textContent = `Affichage de ${startItem} à ${endItem} sur ${total} chambres`;
+        ).textContent = `Affichage de ${startItem} à ${endItem} sur ${total} réservations`;
 
         document.getElementById("current-page").textContent = currentPage;
 
@@ -1119,14 +1023,7 @@
           .getElementById("status-filter")
           .addEventListener("change", () => {
             currentPage = 1;
-            loadChambres(currentPage);
-          });
-
-        document
-          .getElementById("type-filter")
-          .addEventListener("change", () => {
-            currentPage = 1;
-            loadChambres(currentPage);
+            loadReservations(currentPage);
           });
 
         // Recherche
@@ -1134,7 +1031,7 @@
           "input",
           debounce(() => {
             currentPage = 1;
-            loadChambres(currentPage);
+            loadReservations(currentPage);
           }, 500)
         );
 
@@ -1142,15 +1039,15 @@
         document.getElementById("prev-page").addEventListener("click", () => {
           if (currentPage > 1) {
             currentPage--;
-            loadChambres(currentPage);
+            loadReservations(currentPage);
           }
         });
 
         document.getElementById("next-page").addEventListener("click", () => {
-          const totalPages = Math.ceil(totalChambres / itemsPerPage);
+          const totalPages = Math.ceil(totalReservations / itemsPerPage);
           if (currentPage < totalPages) {
             currentPage++;
-            loadChambres(currentPage);
+            loadReservations(currentPage);
           }
         });
 
@@ -1158,25 +1055,6 @@
         document
           .getElementById("export-btn")
           .addEventListener("click", exportData);
-
-        // Ajouter une chambre
-        document
-          .getElementById("add-chambre-btn")
-          .addEventListener("click", () => {
-            currentAction = "add";
-            showChambreModal();
-          });
-
-        // Modal events
-        document
-          .getElementById("close-modal")
-          .addEventListener("click", hideChambreModal);
-        document
-          .getElementById("cancel-btn")
-          .addEventListener("click", hideChambreModal);
-        document
-          .getElementById("save-chambre-btn")
-          .addEventListener("click", saveChambre);
       }
 
       // Fonctions utilitaires
@@ -1189,6 +1067,12 @@
         });
       }
 
+      function calculateNights(arrivee, depart) {
+        const arriveeDate = new Date(arrivee);
+        const departDate = new Date(depart);
+        return Math.ceil((departDate - arriveeDate) / (1000 * 60 * 60 * 24));
+      }
+
       function formatPrice(price) {
         return new Intl.NumberFormat("fr-FR", {
           minimumFractionDigits: 2,
@@ -1197,18 +1081,18 @@
 
       function getStatusClass(status) {
         const statusClasses = {
-          disponible: "available",
-          occupee: "occupied",
-          maintenance: "maintenance",
+          confirme: "confirmed",
+          "en attente": "pending",
+          annulee: "cancelled",
         };
-        return statusClasses[status] || "available";
+        return statusClasses[status] || "pending";
       }
 
       function getStatusText(status) {
         const statusTexts = {
-          disponible: "Disponible",
-          occupee: "Occupée",
-          maintenance: "Maintenance",
+          confirme: "Confirmée",
+          "en attente": "En attente",
+          annulee: "Annulée",
         };
         return statusTexts[status] || status;
       }
@@ -1236,14 +1120,14 @@
 
       function showLoading(element) {
         const container = document.getElementById(
-          element === "chambres" ? "chambres-body" : "stats-container"
+          element === "reservations" ? "reservations-body" : "stats-container"
         );
         container.classList.add("loading");
       }
 
       function hideLoading(element) {
         const container = document.getElementById(
-          element === "chambres" ? "chambres-body" : "stats-container"
+          element === "reservations" ? "reservations-body" : "stats-container"
         );
         container.classList.remove("loading");
       }
@@ -1269,183 +1153,147 @@
       }
 
       // Fonctions d'action
-      async function updateChambreStatus(chambreId, newStatus) {
-        const actionText =
-          newStatus === "disponible"
-            ? "rendre disponible"
-            : "mettre en maintenance";
+      async function updateReservationStatus(reservationId, newStatus, event) {
+        console.log("Mise à jour du statut:", reservationId, newStatus);
+
+        const actionTexts = {
+          confirme: "confirmer",
+          annulee: "annuler",
+          "en attente": "remettre en attente",
+        };
+
+        const actionText = actionTexts[newStatus] || "modifier";
 
         if (
-          !confirm(`Êtes-vous sûr de vouloir ${actionText} cette chambre ?`)
+          !confirm(`Êtes-vous sûr de vouloir ${actionText} cette réservation ?`)
         ) {
           return;
         }
 
+        let button = null;
+        let originalHTML = "";
+
         try {
-          const response = await fetch("admin-chambres.php", {
+          // Afficher un indicateur de chargement sur le bouton cliqué
+          if (event && event.target) {
+            button = event.target.closest(".action-btn");
+            if (button) {
+              originalHTML = button.innerHTML;
+              button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+              button.disabled = true;
+              button.style.opacity = "0.6";
+            }
+          }
+
+          const response = await fetch("admin-reservations.php", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
               action: "update_status",
-              chambre_id: chambreId,
+              reservation_id: reservationId,
               status: newStatus,
             }),
           });
 
           const result = await response.json();
+          console.log("Réponse du serveur:", result);
 
           if (result.success) {
-            showSuccess(
-              `Chambre ${
-                actionText === "rendre disponible"
-                  ? "rendue disponible"
-                  : "mise en maintenance"
-              } avec succès`
-            );
-            // Recharger les données
-            loadStats();
-            loadChambres(currentPage);
-          } else {
-            showError("Erreur: " + result.error);
-          }
-        } catch (error) {
-          console.error("Erreur:", error);
-          showError("Erreur lors de la mise à jour");
-        }
-      }
+            let message = "";
+            let icon = "✅";
 
-      function viewChambre(chambreId) {
-        alert(`Détails de la chambre #${chambreId}`);
-        // Dans une implémentation réelle, ouvrir un modal avec les détails complets
-      }
+            switch (newStatus) {
+              case "confirme":
+                message = "Réservation confirmée avec succès";
+                icon = "✅";
+                break;
+              case "annulee":
+                message = "Réservation annulée avec succès";
+                icon = "❌";
+                break;
+              case "en attente":
+                message = "Réservation remise en attente";
+                icon = "⏳";
+                break;
+              default:
+                message = "Statut mis à jour avec succès";
+                icon = "✓";
+            }
+            showSuccess(`${icon} ${message}`);
 
-      async function editChambre(chambreId) {
-        try {
-          const response = await fetch(
-            `admin-chambres.php?action=get_chambre&id=${chambreId}`
-          );
-          const result = await response.json();
-
-          if (result.success) {
-            currentAction = "edit";
-            showChambreModal(result.data);
+            // Recharger les données après un court délai
+            setTimeout(() => {
+              loadStats();
+              loadReservations(currentPage);
+            }, 1000);
           } else {
             showError(
-              "Erreur lors du chargement de la chambre: " + result.error
+              "Erreur: " +
+                (result.error || "Erreur inconnue lors de la mise à jour")
             );
+            // Restaurer le bouton en cas d'erreur
+            if (button) {
+              button.innerHTML = originalHTML;
+              button.disabled = false;
+              button.style.opacity = "1";
+            }
           }
         } catch (error) {
           console.error("Erreur:", error);
-          showError("Erreur de connexion au serveur");
-        }
-      }
-
-      function showChambreModal(chambre = null) {
-        const modal = document.getElementById("chambre-modal");
-        const title = document.getElementById("modal-title");
-        const form = document.getElementById("chambre-form");
-
-        if (chambre) {
-          // Mode édition
-          title.textContent = "Modifier la chambre";
-          document.getElementById("chambre-id").value = chambre.idChambre;
-          document.getElementById("numero-chambre").value =
-            chambre.numeroChambre;
-          document.getElementById("type-chambre").value = chambre.type_chambre;
-          document.getElementById("capacite-chambre").value = chambre.capacite;
-          document.getElementById("prix-chambre").value = chambre.prix_nuit;
-          document.getElementById("description-chambre").value =
-            chambre.description;
-          document.getElementById("disponible-chambre").checked =
-            chambre.disponible == 1;
-        } else {
-          // Mode ajout
-          title.textContent = "Nouvelle chambre";
-          form.reset();
-          document.getElementById("disponible-chambre").checked = true;
-        }
-
-        modal.style.display = "flex";
-      }
-
-      function hideChambreModal() {
-        document.getElementById("chambre-modal").style.display = "none";
-      }
-
-      async function saveChambre() {
-        const form = document.getElementById("chambre-form");
-        const formData = new FormData(form);
-
-        if (!form.checkValidity()) {
-          form.reportValidity();
-          return;
-        }
-
-        const chambreData = {
-          numero: document.getElementById("numero-chambre").value,
-          type: document.getElementById("type-chambre").value,
-          capacite: parseInt(document.getElementById("capacite-chambre").value),
-          prix: parseFloat(document.getElementById("prix-chambre").value),
-          description: document.getElementById("description-chambre").value,
-          disponible: document.getElementById("disponible-chambre").checked
-            ? 1
-            : 0,
-        };
-
-        if (currentAction === "edit") {
-          chambreData.chambre_id = document.getElementById("chambre-id").value;
-          chambreData.action = "update_chambre";
-        } else {
-          chambreData.action = "add_chambre";
-        }
-
-        try {
-          const response = await fetch("admin-chambres.php", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(chambreData),
-          });
-
-          const result = await response.json();
-
-          if (result.success) {
-            showSuccess(
-              `Chambre ${
-                currentAction === "add" ? "ajoutée" : "modifiée"
-              } avec succès`
-            );
-            hideChambreModal();
-            // Recharger les données
-            loadStats();
-            loadChambres(currentPage);
-          } else {
-            showError("Erreur: " + result.error);
+          showError("Erreur de connexion: " + error.message);
+          // Restaurer le bouton en cas d'erreur
+          if (button) {
+            button.innerHTML = originalHTML;
+            button.disabled = false;
+            button.style.opacity = "1";
           }
-        } catch (error) {
-          console.error("Erreur:", error);
-          showError("Erreur lors de l'enregistrement");
         }
+      }
+
+      function viewReservation(reservationId) {
+        alert(`Détails de la réservation #${reservationId}`);
+        // Dans une implémentation réelle, ouvrir un modal ou une page détaillée
       }
 
       function exportData() {
         // Implémentation basique de l'export
         const statusFilter = document.getElementById("status-filter").value;
-        const typeFilter = document.getElementById("type-filter").value;
         const searchTerm = document.getElementById("search-input").value;
 
         const params = new URLSearchParams({
           action: "export",
           status: statusFilter,
-          type: typeFilter,
           search: searchTerm,
         });
 
-        window.open(`admin-chambres.php?${params}`, "_blank");
+        window.open(`admin-reservations.php?${params}`, "_blank");
       }
+
+      // Test de connexion
+      async function testConnection() {
+        try {
+          console.log("Test de connexion...");
+          const response = await fetch(
+            "admin-reservations.php?action=get_stats"
+          );
+          const result = await response.json();
+          console.log("Test de connexion résultat:", result);
+          return result.success;
+        } catch (error) {
+          console.error("Échec du test de connexion:", error);
+          return false;
+        }
+      }
+      /* *********************************************************************************************/
+      // Appeler le test au chargement
+      document.addEventListener("DOMContentLoaded", async function () {
+        const connected = await testConnection();
+        if (!connected) {
+          console.warn("Utilisation des données de démonstration");
+        }
+      });
     </script>
   </body>
 </html>

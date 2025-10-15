@@ -29,13 +29,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['admin_username'] = $username;
             $_SESSION['login_time'] = time();
             
+            // Debug log
+            error_log("=== LOGIN SUCCESS ===");
+            error_log("Session ID: " . session_id());
+            error_log("Session data: " . print_r($_SESSION, true));
+            
             header('Location: admin-interface.php');
             exit;
         } else {
             $error = 'Identifiants incorrects';
+            error_log("=== LOGIN FAILED ===");
+            error_log("Username: " . $username);
         }
     } else {
         $error = 'Erreur lors de la vérification';
+        error_log("=== DATABASE ERROR ===");
     }
 }
 ?>

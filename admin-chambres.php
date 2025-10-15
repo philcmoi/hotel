@@ -1,6 +1,15 @@
 <?php
+session_start();
+
 // admin-chambres.php
 header('Content-Type: application/json');
+
+// Vérifier si la session admin existe
+if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
+    echo json_encode(['success' => false, 'error' => 'Non authentifié - Veuillez vous reconnecter']);
+    exit;
+}
+
 require_once 'config.php';
 
 // Classe Database intégrée
@@ -235,23 +244,36 @@ class AdminChambres {
     }
 }
 
-// Vérifier l'authentification
-session_start();
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
-    echo json_encode(['success' => false, 'error' => 'Non authentifié']);
-    exit;
-}
-
-// Traitement des requêtes
-$admin = new AdminChambres();
-$response = ['success' => false, 'error' => 'Action non reconnue'];
-
 try {
-    if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action'])) {
+    $admin = new AdminChambres();
+    
+    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        // Si aucun paramètre action n'est fourni, charger les chambres par défaut
+        if (!isset($_GET['action'])) {
+            $page = $_GET['page'] ?? 1;
+            $status = $_GET['status'] ?? 'all';
+            $type = $_GET['type'] ?? 'all';
+            $search = $_GET['search'] ?? '';
+            
+            $filters = [
+                'status' => $status,
+                'type' => $type,
+                'search' => $search
+            ];
+            
+            $result = $admin->getAllChambres($page, 10, $filters);
+            echo json_encode([
+                'success' => true, 
+                'data' => $result['chambres'],
+                'total' => $result['total']
+            ]);
+            exit;
+        }
+
         switch ($_GET['action']) {
             case 'get_stats':
                 $stats = $admin->getChambreStats();
-                $response = ['success' => true, 'data' => $stats];
+                echo json_encode(['success' => true, 'data' => $stats]);
                 break;
                 
             case 'get_chambres':
@@ -267,34 +289,45 @@ try {
                 ];
                 
                 $result = $admin->getAllChambres($page, 10, $filters);
-                $response = [
+                echo json_encode([
                     'success' => true, 
                     'data' => $result['chambres'],
                     'total' => $result['total']
-                ];
+                ]);
                 break;
 
             case 'get_chambre':
                 if (isset($_GET['id'])) {
                     $chambre = $admin->getChambreById($_GET['id']);
-                    $response = ['success' => true, 'data' => $chambre];
+                    if ($chambre) {
+                        echo json_encode(['success' => true, 'data' => $chambre]);
+                    } else {
+                        echo json_encode(['success' => false, 'error' => 'Chambre non trouvée']);
+                    }
+                } else {
+                    echo json_encode(['success' => false, 'error' => 'ID chambre manquant']);
                 }
+                break;
+
+            default:
+                echo json_encode(['success' => false, 'error' => 'Action GET non reconnue: ' . $_GET['action']]);
                 break;
         }
     } 
     elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $input = json_decode(file_get_contents('php://input'), true);
         
-        if (isset($input['action'])) {
+        if ($input === null) {
+            echo json_encode(['success' => false, 'error' => 'Données JSON invalides']);
+        } elseif (isset($input['action'])) {
             switch ($input['action']) {
                 case 'update_status':
                     if (isset($input['chambre_id']) && isset($input['status'])) {
                         $disponible = ($input['status'] === 'disponible') ? 1 : 0;
                         $success = $admin->updateChambreStatus($input['chambre_id'], $disponible);
-                        $response = ['success' => $success];
-                        if (!$success) {
-                            $response['error'] = 'Erreur lors de la mise à jour';
-                        }
+                        echo json_encode(['success' => $success]);
+                    } else {
+                        echo json_encode(['success' => false, 'error' => 'Paramètres manquants pour update_status']);
                     }
                     break;
 
@@ -308,10 +341,9 @@ try {
                             'description' => $input['description'] ?? '',
                             'disponible' => $input['disponible'] ?? 1
                         ]);
-                        $response = ['success' => $success];
-                        if (!$success) {
-                            $response['error'] = 'Erreur lors de l\'ajout de la chambre';
-                        }
+                        echo json_encode(['success' => $success]);
+                    } else {
+                        echo json_encode(['success' => false, 'error' => 'Paramètres manquants pour add_chambre']);
                     }
                     break;
 
@@ -325,18 +357,25 @@ try {
                             ':description' => $input['description'] ?? '',
                             ':disponible' => $input['disponible'] ?? 1
                         ]);
-                        $response = ['success' => $success];
-                        if (!$success) {
-                            $response['error'] = 'Erreur lors de la modification de la chambre';
-                        }
+                        echo json_encode(['success' => $success]);
+                    } else {
+                        echo json_encode(['success' => false, 'error' => 'Paramètres manquants pour update_chambre']);
                     }
                     break;
+
+                default:
+                    echo json_encode(['success' => false, 'error' => 'Action POST non reconnue: ' . $input['action']]);
+                    break;
             }
+        } else {
+            echo json_encode(['success' => false, 'error' => 'Action manquante dans les données POST']);
         }
     }
+    else {
+        echo json_encode(['success' => false, 'error' => 'Méthode HTTP non supportée: ' . $_SERVER['REQUEST_METHOD']]);
+    }
 } catch (Exception $e) {
-    $response = ['success' => false, 'error' => $e->getMessage()];
+    error_log("Erreur dans admin-chambres.php: " . $e->getMessage());
+    echo json_encode(['success' => false, 'error' => 'Erreur serveur: ' . $e->getMessage()]);
 }
-
-echo json_encode($response);
 ?>

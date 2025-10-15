@@ -1,1299 +1,871 @@
 <?php
+// admin-interface.php - TABLEAU DE BORD ADMINISTRATEUR
 session_start();
 
-// Vérification robuste de l'authentification
+// Vérifier l'authentification
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
-    // Redirection vers la page de connexion
     header('Location: login.php');
     exit;
 }
 
-// Protection contre la fixation de session
-session_regenerate_id(true);
+// Inclure la configuration
+require_once 'config.php';
 
-// Déconnexion automatique après 30 minutes d'inactivité
-$timeout = 1800; // 30 minutes en secondes
-if (isset($_SESSION['login_time']) && (time() - $_SESSION['login_time']) > $timeout) {
-    session_unset();
-    session_destroy();
-    header('Location: login.php?timeout=1');
-    exit;
+// Connexion à la base de données
+try {
+    $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8", DB_USER, DB_PASS);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch(PDOException $e) {
+    die("Erreur de connexion : " . $e->getMessage());
 }
 
-// Mettre à jour le temps d'activité
-$_SESSION['login_time'] = time();
+// Récupérer les statistiques
+try {
+    // Statistiques des réservations
+    $stmt = $pdo->query("
+        SELECT 
+            COUNT(*) as total_reservations,
+            SUM(CASE WHEN etat_reservation = 'confirme' THEN 1 ELSE 0 END) as reservations_confirmees,
+            SUM(CASE WHEN etat_reservation = 'en attente' THEN 1 ELSE 0 END) as reservations_attente,
+            SUM(CASE WHEN etat_reservation = 'annulee' THEN 1 ELSE 0 END) as reservations_annulees
+        FROM reservations
+    ");
+    $stats_reservations = $stmt->fetch(PDO::FETCH_ASSOC);
 
-header('Access-Control-Allow-Origin: http://localhost');
-header('Access-Control-Allow-Credentials: true');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+    // Statistiques des clients
+    $stmt = $pdo->query("SELECT COUNT(*) as total_clients FROM clients");
+    $stats_clients = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // Statistiques des chambres
+    $stmt = $pdo->query("
+        SELECT 
+            COUNT(*) as total_chambres,
+            SUM(CASE WHEN disponible = 1 THEN 1 ELSE 0 END) as chambres_disponibles
+        FROM chambres
+    ");
+    $stats_chambres = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // Revenus totaux (réservations confirmées uniquement)
+    $stmt = $pdo->query("
+        SELECT COALESCE(SUM(prix_total), 0) as revenus_totaux 
+        FROM reservations 
+        WHERE etat_reservation = 'confirme'
+    ");
+    $revenus = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // Dernières réservations
+    $stmt = $pdo->query("
+        SELECT r.*, c.nom, c.prenom 
+        FROM reservations r 
+        LEFT JOIN clients c ON r.idClient = c.idClient 
+        ORDER BY r.date_reservation DESC 
+        LIMIT 5
+    ");
+    $dernieres_reservations = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+} catch(PDOException $e) {
+    $error = "Erreur lors de la récupération des données : " . $e->getMessage();
+    // Initialiser les variables pour éviter les erreurs
+    $stats_reservations = ['total_reservations' => 0, 'reservations_confirmees' => 0, 'reservations_attente' => 0, 'reservations_annulees' => 0];
+    $stats_clients = ['total_clients' => 0];
+    $stats_chambres = ['total_chambres' => 0, 'chambres_disponibles' => 0];
+    $revenus = ['revenus_totaux' => 0];
+    $dernieres_reservations = [];
+}
 ?>
+
 <!DOCTYPE html>
 <html lang="fr">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Administration des Réservations - Hôtel</title>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tableau de Bord - <?php echo APP_NAME; ?></title>
     <style>
-      :root {
-        --primary: #4361ee;
-        --primary-dark: #3a56d4;
-        --secondary: #7209b7;
-        --success: #4cc9f0;
-        --warning: #f72585;
-        --light: #f8f9fa;
-        --dark: #212529;
-        --gray: #6c757d;
-        --border: #dee2e6;
-      }
-
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      }
-
-      body {
-        background-color: #f5f7fb;
-        color: var(--dark);
-        line-height: 1.6;
-      }
-
-      .admin-container {
-        display: flex;
-        min-height: 100vh;
-      }
-
-      /* Sidebar */
-      .sidebar {
-        width: 250px;
-        background: linear-gradient(
-          135deg,
-          var(--primary) 0%,
-          var(--secondary) 100%
-        );
-        color: white;
-        padding: 20px 0;
-        box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
-        z-index: 100;
-      }
-
-      .logo {
-        padding: 0 20px 20px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        margin-bottom: 20px;
-      }
-
-      .logo h1 {
-        font-size: 1.5rem;
-        font-weight: 700;
-      }
-
-      .logo span {
-        color: var(--success);
-      }
-
-      .nav-links {
-        list-style: none;
-      }
-
-      .nav-links li {
-        padding: 12px 20px;
-        transition: all 0.3s ease;
-      }
-
-      .nav-links li:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-      }
-
-      .nav-links li.active {
-        background-color: rgba(255, 255, 255, 0.2);
-        border-left: 4px solid var(--success);
-      }
-
-      .nav-links a {
-        color: white;
-        text-decoration: none;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .nav-links i {
-        font-size: 1.2rem;
-      }
-
-      /* Main Content */
-      .main-content {
-        flex: 1;
-        padding: 20px;
-        overflow-y: auto;
-      }
-
-      .header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 30px;
-        padding-bottom: 15px;
-        border-bottom: 1px solid var(--border);
-      }
-
-      .header h2 {
-        font-size: 1.8rem;
-        font-weight: 600;
-        color: var(--dark);
-      }
-
-      .user-info {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .user-avatar {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background-color: var(--primary);
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-      }
-
-      /* Stats Cards */
-      .stats-container {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 20px;
-        margin-bottom: 30px;
-      }
-
-      .stat-card {
-        background: white;
-        border-radius: 10px;
-        padding: 20px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-        display: flex;
-        flex-direction: column;
-        transition: transform 0.3s ease;
-      }
-
-      .stat-card:hover {
-        transform: translateY(-5px);
-      }
-
-      .stat-card.total {
-        border-top: 4px solid #4361ee;
-      }
-
-      .stat-card.confirmed {
-        border-top: 4px solid #4cc9f0;
-      }
-
-      .stat-card.pending {
-        border-top: 4px solid #f72585;
-      }
-
-      .stat-card.cancelled {
-        border-top: 4px solid #6c757d;
-      }
-
-      .stat-value {
-        font-size: 2rem;
-        font-weight: 700;
-        margin: 10px 0;
-      }
-
-      .stat-label {
-        color: var(--gray);
-        font-size: 0.9rem;
-      }
-
-      .stat-trend {
-        font-size: 0.8rem;
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        margin-top: 5px;
-      }
-
-      .stat-trend.positive {
-        color: #2ed573;
-      }
-
-      .stat-trend.negative {
-        color: #ff4757;
-      }
-
-      /* Filters */
-      .filters {
-        background: white;
-        border-radius: 10px;
-        padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-        display: flex;
-        flex-wrap: wrap;
-        gap: 15px;
-        align-items: center;
-      }
-
-      .filter-group {
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-      }
-
-      .filter-group label {
-        font-size: 0.85rem;
-        color: var(--gray);
-        font-weight: 500;
-      }
-
-      .filter-select,
-      .filter-input {
-        padding: 8px 12px;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        font-size: 0.9rem;
-        background: white;
-      }
-
-      .search-box {
-        display: flex;
-        align-items: center;
-        background: white;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 0 10px;
-        margin-left: auto;
-        flex: 1;
-        max-width: 300px;
-      }
-
-      .search-box input {
-        border: none;
-        padding: 8px 10px;
-        outline: none;
-        width: 100%;
-        background: transparent;
-      }
-
-      .search-box i {
-        color: var(--gray);
-      }
-
-      /* Reservations Table */
-      .reservations-table-container {
-        background: white;
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-      }
-
-      .table-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 20px;
-        border-bottom: 1px solid var(--border);
-      }
-
-      .table-header h3 {
-        font-size: 1.3rem;
-        font-weight: 600;
-      }
-
-      .table-actions {
-        display: flex;
-        gap: 10px;
-      }
-
-      .btn {
-        padding: 8px 15px;
-        border: none;
-        border-radius: 6px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        text-decoration: none;
-        font-size: 0.9rem;
-      }
-
-      .btn-primary {
-        background-color: var(--primary);
-        color: white;
-      }
-
-      .btn-primary:hover {
-        background-color: var(--primary-dark);
-      }
-
-      .btn-outline {
-        background-color: transparent;
-        border: 1px solid var(--border);
-        color: var(--dark);
-      }
-
-      .btn-outline:hover {
-        background-color: #f8f9fa;
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-      }
-
-      th {
-        background-color: #f8f9fa;
-        padding: 15px;
-        text-align: left;
-        font-weight: 600;
-        color: var(--dark);
-        border-bottom: 1px solid var(--border);
-      }
-
-      td {
-        padding: 15px;
-        border-bottom: 1px solid var(--border);
-      }
-
-      tr:last-child td {
-        border-bottom: none;
-      }
-
-      tr:hover {
-        background-color: #f8f9fa;
-      }
-
-      .reservation-id {
-        font-weight: 600;
-        color: var(--primary);
-      }
-
-      .client-info {
-        display: flex;
-        flex-direction: column;
-      }
-
-      .client-name {
-        font-weight: 600;
-      }
-
-      .client-email {
-        font-size: 0.85rem;
-        color: var(--gray);
-      }
-
-      .chambre-info {
-        display: flex;
-        flex-direction: column;
-      }
-
-      .chambre-numero {
-        font-weight: 600;
-      }
-
-      .chambre-type {
-        font-size: 0.85rem;
-        color: var(--gray);
-      }
-
-      .date-info {
-        display: flex;
-        flex-direction: column;
-      }
-
-      .date-range {
-        font-weight: 600;
-      }
-
-      .nights {
-        font-size: 0.85rem;
-        color: var(--gray);
-      }
-
-      .status {
-        padding: 5px 10px;
-        border-radius: 20px;
-        font-size: 0.8rem;
-        font-weight: 500;
-        text-align: center;
-        display: inline-block;
-      }
-
-      .status.confirmed {
-        background-color: rgba(76, 201, 240, 0.1);
-        color: #4cc9f0;
-      }
-
-      .status.pending {
-        background-color: rgba(247, 37, 133, 0.1);
-        color: #f72585;
-      }
-
-      .status.cancelled {
-        background-color: rgba(108, 117, 125, 0.1);
-        color: #6c757d;
-      }
-
-      .price {
-        font-weight: 600;
-        color: var(--dark);
-      }
-
-      .actions {
-        display: flex;
-        gap: 8px;
-      }
-
-      .action-btn {
-        background: none;
-        border: none;
-        cursor: pointer;
-        color: var(--gray);
-        transition: color 0.3s ease;
-        font-size: 1.1rem;
-        padding: 5px;
-        border-radius: 4px;
-      }
-
-      .action-btn:hover {
-        color: var(--primary);
-        background-color: rgba(67, 97, 238, 0.1);
-      }
-
-      /* Pagination */
-      .pagination {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 20px;
-        border-top: 1px solid var(--border);
-      }
-
-      .pagination-info {
-        color: var(--gray);
-        font-size: 0.9rem;
-      }
-
-      .pagination-controls {
-        display: flex;
-        gap: 5px;
-      }
-
-      .page-btn {
-        width: 35px;
-        height: 35px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border: 1px solid var(--border);
-        background: white;
-        border-radius: 6px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        font-size: 0.9rem;
-      }
-
-      .page-btn.active {
-        background-color: var(--primary);
-        color: white;
-        border-color: var(--primary);
-      }
-
-      .page-btn:hover:not(.active) {
-        background-color: #f8f9fa;
-      }
-
-      /* Loading State */
-      .loading {
-        opacity: 0.6;
-        pointer-events: none;
-      }
-
-      .loading-spinner {
-        display: inline-block;
-        width: 20px;
-        height: 20px;
-        border: 3px solid rgba(255, 255, 255, 0.3);
-        border-radius: 50%;
-        border-top-color: #fff;
-        animation: spin 1s ease-in-out infinite;
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      /* Messages */
-      .error-message {
-        background-color: #ff4757;
-        color: white;
-        padding: 10px 15px;
-        border-radius: 5px;
-        margin-bottom: 20px;
-        display: none;
-      }
-
-      .success-message {
-        background-color: #2ed573;
-        color: white;
-        padding: 10px 15px;
-        border-radius: 5px;
-        margin-bottom: 20px;
-        display: none;
-      }
-
-      /* Responsive */
-      @media (max-width: 992px) {
-        .admin-container {
-          flex-direction: column;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
 
-        .sidebar {
-          width: 100%;
-          height: auto;
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
         }
 
-        .nav-links {
-          display: flex;
-          overflow-x: auto;
+        .dashboard-container {
+            min-height: 100vh;
+            background: #f5f5f5;
         }
 
-        .nav-links li {
-          white-space: nowrap;
-        }
-      }
-
-      @media (max-width: 768px) {
-        .filters {
-          flex-direction: column;
-          align-items: stretch;
+        .admin-header {
+            background: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-bottom: 3px solid #667eea;
         }
 
-        .search-box {
-          margin-left: 0;
-          width: 100%;
-          max-width: none;
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1400px;
+            margin: 0 auto;
         }
 
-        .table-header {
-          flex-direction: column;
-          gap: 15px;
-          align-items: flex-start;
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
         }
 
-        .reservations-table-container {
-          overflow-x: auto;
+        .btn-logout {
+            background: #667eea;
+            color: white;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            text-decoration: none;
+            transition: background 0.3s;
+            font-size: 14px;
         }
 
-        table {
-          min-width: 800px;
+        .btn-logout:hover {
+            background: #5a6fd8;
         }
 
-        .stats-container {
-          grid-template-columns: 1fr 1fr;
-        }
-      }
-
-      @media (max-width: 480px) {
-        .stats-container {
-          grid-template-columns: 1fr;
+        .dashboard-main {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
         }
 
-        .table-actions {
-          flex-direction: column;
-          width: 100%;
+        .welcome-section {
+            background: white;
+            border-radius: 15px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            text-align: center;
         }
 
-        .btn {
-          justify-content: center;
+        .welcome-section h1 {
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+            font-size: 2.5rem;
         }
-      }
+
+        .welcome-section p {
+            color: #7f8c8d;
+            font-size: 1.1rem;
+        }
+
+        /* Grille des statistiques */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            margin-bottom: 3rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            text-align: center;
+            transition: transform 0.3s, box-shadow 0.3s;
+            border-left: 5px solid;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+
+        .stat-card.reservations { border-left-color: #e74c3c; }
+        .stat-card.clients { border-left-color: #3498db; }
+        .stat-card.chambres { border-left-color: #2ecc71; }
+        .stat-card.revenus { border-left-color: #f39c12; }
+
+        .stat-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            color: #2c3e50;
+        }
+
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+        }
+
+        .stat-details {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 10px;
+            margin-top: 1rem;
+        }
+
+        .stat-detail {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        /* Grille des actions rapides */
+        .actions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-bottom: 3rem;
+        }
+
+        .action-card {
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            text-align: center;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+        }
+
+        .action-card:hover {
+            border-color: #667eea;
+            transform: translateY(-3px);
+        }
+
+        .action-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            color: #667eea;
+        }
+
+        .action-title {
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            color: #2c3e50;
+        }
+
+        .action-description {
+            color: #7f8c8d;
+            margin-bottom: 1.5rem;
+            line-height: 1.5;
+        }
+
+        .btn-action {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            text-decoration: none;
+            display: inline-block;
+            font-weight: 600;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .btn-action:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        /* Section des dernières réservations */
+        .recent-section {
+            background: white;
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid #f8f9fa;
+        }
+
+        .section-header h2 {
+            color: #2c3e50;
+            font-size: 1.5rem;
+        }
+
+        .view-all {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .reservations-list {
+            display: grid;
+            gap: 1rem;
+        }
+
+        .reservation-item {
+            display: grid;
+            grid-template-columns: auto 1fr auto auto;
+            gap: 1rem;
+            align-items: center;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 10px;
+            transition: background 0.3s;
+        }
+
+        .reservation-item:hover {
+            background: #e9ecef;
+        }
+
+        .reservation-id {
+            font-weight: bold;
+            color: #667eea;
+            font-size: 1.1rem;
+        }
+
+        .reservation-client {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .reservation-dates {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+        }
+
+        .reservation-status {
+            padding: 6px 12px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .status-confirme { background: #d4edda; color: #155724; }
+        .status-attente { background: #fff3cd; color: #856404; }
+        .status-annulee { background: #f8d7da; color: #721c24; }
+
+        /* Messages d'erreur */
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .dashboard-main {
+                padding: 1rem;
+            }
+            
+            .header-content {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+            
+            .stats-grid,
+            .actions-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .reservation-item {
+                grid-template-columns: 1fr;
+                text-align: center;
+                gap: 0.5rem;
+            }
+            
+            .welcome-section h1 {
+                font-size: 2rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .stat-card,
+            .action-card {
+                padding: 1.5rem;
+            }
+            
+            .stat-number {
+                font-size: 2rem;
+            }
+            
+            .btn-action {
+                padding: 10px 20px;
+                font-size: 14px;
+            }
+        }
+
+        /* Animation de chargement */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
-    />
-  </head>
-  <body>
-    <div class="admin-container">
-      <!-- Sidebar -->
-      <div class="sidebar">
-        <div class="logo">
-          <h1>Hôtel<span>Premium</span></h1>
-        </div>
-        <ul class="nav-links">
-          <li class="active">
-            <a href="#"
-              ><i class="fas fa-tachometer-alt"></i> Tableau de bord</a
-            >
-          </li>
-          <li>
-            <a href="#"><i class="fas fa-bed"></i> Chambres</a>
-          </li>
-          <li>
-            <a href="#"><i class="fas fa-calendar-check"></i> Réservations</a>
-          </li>
-          <li>
-            <a href="#"><i class="fas fa-users"></i> Clients</a>
-          </li>
-          <li>
-            <a href="#"><i class="fas fa-chart-bar"></i> Statistiques</a>
-          </li>
-          <li>
-            <a href="#"><i class="fas fa-cog"></i> Paramètres</a>
-          </li>
-          <li>
-            <a href="#"><i class="fas fa-sign-out-alt"></i> Déconnexion</a>
-          </li>
-        </ul>
-      </div>
-
-      <!-- Main Content -->
-      <div class="main-content">
-        <div class="header">
-          <h2>Gestion des Réservations</h2>
-          <div class="user-info">
-            <div class="user-avatar">AD</div>
-            <span>Admin</span>
-          </div>
-        </div>
-
-        <!-- Messages -->
-        <div class="error-message" id="error-message"></div>
-        <div class="success-message" id="success-message"></div>
-
-        <!-- Stats Cards -->
-        <div class="stats-container">
-          <div class="stat-card total">
-            <div class="stat-label">Total des Réservations</div>
-            <div class="stat-value" id="stat-total">0</div>
-            <div class="stat-trend positive" id="stat-total-trend">
-              <i class="fas fa-arrow-up"></i> <span>0%</span> ce mois
+</head>
+<body>
+    <div class="dashboard-container">
+        <header class="admin-header">
+            <div class="header-content">
+                <h1>🎯 Tableau de Bord - <?php echo APP_NAME; ?></h1>
+                <div class="user-info">
+                    <span>Connecté en tant que <strong><?php echo htmlspecialchars($_SESSION['admin_username'] ?? 'Administrateur'); ?></strong></span>
+                    <span>Dernière connexion : <?php echo date('d/m/Y H:i', $_SESSION['login_time'] ?? time()); ?></span>
+                    <a href="logout.php" class="btn-logout">🚪 Déconnexion</a>
+                </div>
             </div>
-          </div>
-          <div class="stat-card confirmed">
-            <div class="stat-label">Confirmées</div>
-            <div class="stat-value" id="stat-confirmed">0</div>
-            <div class="stat-trend positive" id="stat-confirmed-trend">
-              <i class="fas fa-arrow-up"></i> <span>0%</span> ce mois
-            </div>
-          </div>
-          <div class="stat-card pending">
-            <div class="stat-label">En Attente</div>
-            <div class="stat-value" id="stat-pending">0</div>
-            <div class="stat-trend negative" id="stat-pending-trend">
-              <i class="fas fa-arrow-down"></i> <span>0%</span> ce mois
-            </div>
-          </div>
-          <div class="stat-card cancelled">
-            <div class="stat-label">Annulées</div>
-            <div class="stat-value" id="stat-cancelled">0</div>
-            <div class="stat-trend positive" id="stat-cancelled-trend">
-              <i class="fas fa-arrow-up"></i> <span>0%</span> ce mois
-            </div>
-          </div>
-        </div>
+        </header>
 
-        <!-- Filters -->
-        <div class="filters">
-          <div class="filter-group">
-            <label for="status-filter">Statut</label>
-            <select id="status-filter" class="filter-select">
-              <option value="all">Tous les statuts</option>
-              <option value="confirme">Confirmées</option>
-              <option value="en attente">En attente</option>
-              <option value="annulee">Annulées</option>
-            </select>
-          </div>
-          <div class="search-box">
-            <i class="fas fa-search"></i>
-            <input
-              type="text"
-              id="search-input"
-              placeholder="Rechercher une réservation..."
-            />
-          </div>
-        </div>
+        <main class="dashboard-main">
+            <!-- Message d'erreur -->
+            <?php if (isset($error)): ?>
+                <div class="error-message">
+                    <?php echo $error; ?>
+                </div>
+            <?php endif; ?>
 
-        <!-- Reservations Table -->
-        <div class="reservations-table-container">
-          <div class="table-header">
-            <h3>
-              Liste des Réservations <span id="reservations-count">(0)</span>
-            </h3>
-            <div class="table-actions">
-              <button class="btn btn-outline" id="export-btn">
-                <i class="fas fa-download"></i> Exporter
-              </button>
-              <a
-                href="formulaire.html"
-                class="btn btn-primary"
-                target="_blank"
-              >
-                <i class="fas fa-plus"></i> Nouvelle Réservation
-              </a>
-            </div>
-          </div>
+            <!-- Section de bienvenue -->
+            <section class="welcome-section">
+                <h1>Bienvenue dans votre espace d'administration</h1>
+                <p>Gérez efficacement votre hôtel grâce à ce tableau de bord complet</p>
+            </section>
 
-          <table>
-            <thead>
-              <tr>
-                <th>ID Réservation</th>
-                <th>Client</th>
-                <th>Chambre</th>
-                <th>Dates</th>
-                <th>Personnes</th>
-                <th>Prix</th>
-                <th>Statut</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="reservations-body">
-              <tr>
-                <td colspan="8" style="text-align: center; padding: 40px">
-                  Chargement des réservations...
-                </td>
-              </tr>
-            </tbody>
-          </table>
+            <!-- Grille des statistiques -->
+            <section class="stats-grid">
+                <!-- Carte Réservations -->
+                <div class="stat-card reservations">
+                    <div class="stat-icon">📅</div>
+                    <div class="stat-number"><?php echo $stats_reservations['total_reservations']; ?></div>
+                    <div class="stat-label">Réservations Total</div>
+                    <div class="stat-details">
+                        <div class="stat-detail">
+                            <span>Confirmées :</span>
+                            <span style="color: #27ae60;"><?php echo $stats_reservations['reservations_confirmees']; ?></span>
+                        </div>
+                        <div class="stat-detail">
+                            <span>En attente :</span>
+                            <span style="color: #f39c12;"><?php echo $stats_reservations['reservations_attente']; ?></span>
+                        </div>
+                        <div class="stat-detail">
+                            <span>Annulées :</span>
+                            <span style="color: #e74c3c;"><?php echo $stats_reservations['reservations_annulees']; ?></span>
+                        </div>
+                    </div>
+                </div>
 
-          <!-- Pagination -->
-          <div class="pagination">
-            <div class="pagination-info" id="pagination-info">
-              Chargement des données...
-            </div>
-            <div class="pagination-controls">
-              <button class="page-btn" id="prev-page">
-                <i class="fas fa-chevron-left"></i>
-              </button>
-              <button class="page-btn active" id="current-page">1</button>
-              <button class="page-btn" id="next-page">
-                <i class="fas fa-chevron-right"></i>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+                <!-- Carte Clients -->
+                <div class="stat-card clients">
+                    <div class="stat-icon">👥</div>
+                    <div class="stat-number"><?php echo $stats_clients['total_clients']; ?></div>
+                    <div class="stat-label">Clients Inscrits</div>
+                    <div class="stat-details">
+                        <div class="stat-detail">
+                            <span>Base de données clients</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Carte Chambres -->
+                <div class="stat-card chambres">
+                    <div class="stat-icon">🏨</div>
+                    <div class="stat-number"><?php echo $stats_chambres['total_chambres']; ?></div>
+                    <div class="stat-label">Chambres Total</div>
+                    <div class="stat-details">
+                        <div class="stat-detail">
+                            <span>Disponibles :</span>
+                            <span style="color: #27ae60;"><?php echo $stats_chambres['chambres_disponibles']; ?></span>
+                        </div>
+                        <div class="stat-detail">
+                            <span>Occupées :</span>
+                            <span style="color: #e74c3c;"><?php echo $stats_chambres['total_chambres'] - $stats_chambres['chambres_disponibles']; ?></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Carte Revenus -->
+                <div class="stat-card revenus">
+                    <div class="stat-icon">💰</div>
+                    <div class="stat-number"><?php echo number_format($revenus['revenus_totaux'], 0, ',', ' '); ?>€</div>
+                    <div class="stat-label">Revenus Totaux</div>
+                    <div class="stat-details">
+                        <div class="stat-detail">
+                            <span>Réservations confirmées</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Grille des actions rapides -->
+            <section class="actions-grid">
+                <div class="action-card">
+                    <div class="action-icon">📋</div>
+                    <div class="action-title">Gestion des Réservations</div>
+                    <div class="action-description">
+                        Consultez, modifiez et gérez toutes les réservations de votre hôtel
+                    </div>
+                    <a href="admin-reservations.php" class="btn-action">Accéder aux Réservations</a>
+                </div>
+
+                <div class="action-card">
+                    <div class="action-icon">👥</div>
+                    <div class="action-title">Gestion des Clients</div>
+                    <div class="action-description">
+                        Gérez votre base de données clients et consultez leurs historiques
+                    </div>
+                    <a href="admin-clients.php" class="btn-action">Voir les Clients</a>
+                </div>
+
+                <div class="action-card">
+                    <div class="action-icon">🏨</div>
+                    <div class="action-title">Gestion des Chambres</div>
+                    <div class="action-description">
+                        Configurez les chambres, leurs disponibilités et leurs tarifs
+                    </div>
+                    <a href="admin-chambres.html" class="btn-action">Gérer les Chambres</a>
+                </div>
+
+                <div class="action-card">
+                    <div class="action-icon">📊</div>
+                    <div class="action-title">Rapports et Statistiques</div>
+                    <div class="action-description">
+                        Analysez les performances et générez des rapports détaillés
+                    </div>
+                    <a href="admin-rapports.php" class="btn-action">Voir les Rapports</a>
+                </div>
+            </section>
+
+            <!-- Dernières réservations -->
+            <section class="recent-section">
+                <div class="section-header">
+                    <h2>📝 Dernières Réservations</h2>
+                    <a href="admin-reservations.php" class="view-all">Voir tout →</a>
+                </div>
+
+                <div class="reservations-list">
+                    <?php if (empty($dernieres_reservations)): ?>
+                        <div style="text-align: center; padding: 2rem; color: #7f8c8d;">
+                            <div style="font-size: 3rem; margin-bottom: 1rem;">📭</div>
+                            <p>Aucune réservation récente</p>
+                        </div>
+                    <?php else: ?>
+                        <?php foreach ($dernieres_reservations as $reservation): ?>
+                            <div class="reservation-item">
+                                <div class="reservation-id">#<?php echo $reservation['idReservation']; ?></div>
+                                <div class="reservation-client">
+                                    <?php echo htmlspecialchars($reservation['prenom'] . ' ' . $reservation['nom']); ?>
+                                </div>
+                                <div class="reservation-dates">
+                                    <?php echo date('d/m/Y', strtotime($reservation['date_arrivee'])); ?> - 
+                                    <?php echo date('d/m/Y', strtotime($reservation['date_depart'])); ?>
+                                </div>
+                                <div class="reservation-status status-<?php echo str_replace(' ', '-', $reservation['etat_reservation']); ?>">
+                                    <?php echo $reservation['etat_reservation']; ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+            </section>
+        </main>
     </div>
 
     <script>
-      // Variables globales
-      let currentPage = 1;
-      let totalReservations = 0;
-      const itemsPerPage = 10;
+        // Animation simple au chargement
+        document.addEventListener('DOMContentLoaded', function() {
+            const statCards = document.querySelectorAll('.stat-card');
+            const actionCards = document.querySelectorAll('.action-card');
+            
+            // Animation des cartes de statistiques
+            statCards.forEach((card, index) => {
+                setTimeout(() => {
+                    card.style.opacity = '1';
+                    card.style.transform = 'translateY(0)';
+                }, index * 200);
+            });
 
-      // Charger les données au démarrage
-      document.addEventListener("DOMContentLoaded", function () {
-        loadStats();
-        loadReservations();
-        setupEventListeners();
-      });
-
-      // Charger les statistiques
-      async function loadStats() {
-        try {
-          showLoading("stats");
-          const response = await fetch(
-            "admin-reservations.php?action=get_stats"
-          );
-          const result = await response.json();
-
-          if (result.success) {
-            updateStatsDisplay(result.data);
-          } else {
-            showError(
-              "Erreur lors du chargement des statistiques: " + result.error
-            );
-          }
-        } catch (error) {
-          console.error("Erreur:", error);
-          showError("Erreur de connexion au serveur");
-        } finally {
-          hideLoading("stats");
-        }
-      }
-      // Charger les réservations
-      async function loadReservations(page = 1) {
-        try {
-          showLoading("reservations");
-          const statusFilter = document.getElementById("status-filter").value;
-          const searchTerm = document.getElementById("search-input").value;
-
-          const params = new URLSearchParams({
-            action: "get_reservations",
-            page: page,
-            status: statusFilter,
-            search: searchTerm,
-          });
-
-          console.log("Chargement des réservations...");
-          const response = await fetch(`admin-reservations.php?${params}`);
-
-          if (!response.ok) {
-            throw new Error(`Erreur HTTP: ${response.status}`);
-          }
-
-          const result = await response.json();
-          console.log("Résultat reçu:", result);
-
-          if (result.success) {
-            updateReservationsDisplay(result.data);
-            updatePagination(result.total, page);
-            document.getElementById(
-              "reservations-count"
-            ).textContent = `(${result.data.length})`;
-          } else {
-            showError(
-              "Erreur lors du chargement des réservations: " +
-                (result.error || "Erreur inconnue")
-            );
-          }
-        } catch (error) {
-          console.error("Erreur:", error);
-          showError("Erreur de connexion au serveur: " + error.message);
-
-          // Afficher un message d'erreur dans le tableau
-          const tbody = document.getElementById("reservations-body");
-          tbody.innerHTML = `
-            <tr>
-                <td colspan="8" style="text-align: center; padding: 40px; color: #ff4757;">
-                    Erreur de chargement: ${error.message}<br>
-                    <button onclick="loadReservations(1)" style="margin-top: 10px; padding: 8px 16px; background: #4361ee; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                        Réessayer
-                    </button>
-                </td>
-            </tr>
-        `;
-        } finally {
-          hideLoading("reservations");
-        }
-      }
-
-      // Mettre à jour l'affichage des réservations
-      function updateReservationsDisplay(reservations) {
-        const tbody = document.getElementById("reservations-body");
-
-        if (reservations.length === 0) {
-          tbody.innerHTML = `
-            <tr>
-                <td colspan="8" style="text-align: center; padding: 40px;">
-                    Aucune réservation trouvée
-                </td>
-            </tr>
-        `;
-          return;
-        }
-
-        tbody.innerHTML = reservations
-          .map((reservation) => {
-            // Déterminer quels boutons afficher en fonction du statut actuel
-            const isPending = reservation.etat_reservation === "en attente";
-            const isConfirmed = reservation.etat_reservation === "confirme";
-            const isCancelled = reservation.etat_reservation === "annulee";
-
-            let actionButtons = "";
-
-            // Bouton "Voir les détails" - toujours visible
-            actionButtons += `
-                    <button class="action-btn" title="Voir les détails" onclick="viewReservation(${reservation.idReservation})">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                `;
-
-            // Bouton "Confirmer" - visible seulement pour les réservations en attente
-            if (isPending) {
-              actionButtons += `
-                        <button class="action-btn" title="Confirmer" onclick="updateReservationStatus(${reservation.idReservation}, 'confirme', event)">
-                            <i class="fas fa-check" style="color: #2ed573;"></i>
-                        </button>
-                    `;
-            }
-
-            // Bouton "Annuler" - visible pour les réservations en attente ou confirmées
-            if (isPending || isConfirmed) {
-              actionButtons += `
-                        <button class="action-btn" title="Annuler" onclick="updateReservationStatus(${reservation.idReservation}, 'annulee', event)">
-                            <i class="fas fa-times" style="color: #ff4757;"></i>
-                        </button>
-                    `;
-            }
-
-            // Bouton "Remettre en attente" - visible pour les réservations annulées
-            if (isCancelled) {
-              actionButtons += `
-                        <button class="action-btn" title="Remettre en attente" onclick="updateReservationStatus(${reservation.idReservation}, 'en attente', event)">
-                            <i class="fas fa-clock" style="color: #ffa502;"></i>
-                        </button>
-                    `;
-            }
-
-            return `
-                <tr>
-                    <td class="reservation-id">#RES-${
-                      reservation.idReservation
-                    }</td>
-                    <td>
-                        <div class="client-info">
-                            <span class="client-name">${escapeHtml(
-                              reservation.prenom
-                            )} ${escapeHtml(reservation.nom)}</span>
-                            <span class="client-email">${escapeHtml(
-                              reservation.email
-                            )}</span>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="chambre-info">
-                            <span class="chambre-numero">Chambre ${escapeHtml(
-                              reservation.numeroChambre
-                            )}</span>
-                            <span class="chambre-type">${escapeHtml(
-                              reservation.type_chambre
-                            )}</span>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="date-info">
-                            <span class="date-range">${formatDate(
-                              reservation.date_arrivee
-                            )} - ${formatDate(reservation.date_depart)}</span>
-                            <span class="nights">${calculateNights(
-                              reservation.date_arrivee,
-                              reservation.date_depart
-                            )} nuits</span>
-                        </div>
-                    </td>
-                    <td>${reservation.nombre_personnes}</td>
-                    <td class="price">${formatPrice(
-                      reservation.prix_total
-                    )} €</td>
-                    <td>
-                        <span class="status ${getStatusClass(
-                          reservation.etat_reservation
-                        )}">
-                            ${getStatusText(reservation.etat_reservation)}
-                        </span>
-                    </td>
-                    <td>
-                        <div class="actions">
-                            ${actionButtons}
-                        </div>
-                    </td>
-                </tr>
-                `;
-          })
-          .join("");
-      }
-
-      // Mettre à jour la pagination
-      function updatePagination(total, currentPage) {
-        totalReservations = total;
-        const totalPages = Math.ceil(total / itemsPerPage);
-        const startItem = (currentPage - 1) * itemsPerPage + 1;
-        const endItem = Math.min(currentPage * itemsPerPage, total);
-
-        document.getElementById(
-          "pagination-info"
-        ).textContent = `Affichage de ${startItem} à ${endItem} sur ${total} réservations`;
-
-        document.getElementById("current-page").textContent = currentPage;
-
-        // Gérer l'état des boutons de pagination
-        document.getElementById("prev-page").disabled = currentPage <= 1;
-        document.getElementById("next-page").disabled =
-          currentPage >= totalPages;
-      }
-
-      // Configurer les écouteurs d'événements
-      function setupEventListeners() {
-        // Filtres
-        document
-          .getElementById("status-filter")
-          .addEventListener("change", () => {
-            currentPage = 1;
-            loadReservations(currentPage);
-          });
-
-        // Recherche
-        document.getElementById("search-input").addEventListener(
-          "input",
-          debounce(() => {
-            currentPage = 1;
-            loadReservations(currentPage);
-          }, 500)
-        );
-
-        // Pagination
-        document.getElementById("prev-page").addEventListener("click", () => {
-          if (currentPage > 1) {
-            currentPage--;
-            loadReservations(currentPage);
-          }
+            // Animation des cartes d'action
+            actionCards.forEach((card, index) => {
+                setTimeout(() => {
+                    card.style.opacity = '1';
+                    card.style.transform = 'translateY(0)';
+                }, (index * 100) + 600);
+            });
         });
 
-        document.getElementById("next-page").addEventListener("click", () => {
-          const totalPages = Math.ceil(totalReservations / itemsPerPage);
-          if (currentPage < totalPages) {
-            currentPage++;
-            loadReservations(currentPage);
-          }
+        // Initialisation des styles pour l'animation
+        document.querySelectorAll('.stat-card, .action-card').forEach(card => {
+            card.style.opacity = '0';
+            card.style.transform = 'translateY(20px)';
+            card.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
         });
-
-        // Export
-        document
-          .getElementById("export-btn")
-          .addEventListener("click", exportData);
-      }
-
-      // Fonctions utilitaires
-      function formatDate(dateString) {
-        const date = new Date(dateString);
-        return date.toLocaleDateString("fr-FR", {
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        });
-      }
-
-      function calculateNights(arrivee, depart) {
-        const arriveeDate = new Date(arrivee);
-        const departDate = new Date(depart);
-        return Math.ceil((departDate - arriveeDate) / (1000 * 60 * 60 * 24));
-      }
-
-      function formatPrice(price) {
-        return new Intl.NumberFormat("fr-FR", {
-          minimumFractionDigits: 2,
-        }).format(price);
-      }
-
-      function getStatusClass(status) {
-        const statusClasses = {
-          confirme: "confirmed",
-          "en attente": "pending",
-          annulee: "cancelled",
-        };
-        return statusClasses[status] || "pending";
-      }
-
-      function getStatusText(status) {
-        const statusTexts = {
-          confirme: "Confirmée",
-          "en attente": "En attente",
-          annulee: "Annulée",
-        };
-        return statusTexts[status] || status;
-      }
-
-      function escapeHtml(unsafe) {
-        return unsafe
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;")
-          .replace(/'/g, "&#039;");
-      }
-
-      function debounce(func, wait) {
-        let timeout;
-        return function executedFunction(...args) {
-          const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-          };
-          clearTimeout(timeout);
-          timeout = setTimeout(later, wait);
-        };
-      }
-
-      function showLoading(element) {
-        const container = document.getElementById(
-          element === "reservations" ? "reservations-body" : "stats-container"
-        );
-        container.classList.add("loading");
-      }
-
-      function hideLoading(element) {
-        const container = document.getElementById(
-          element === "reservations" ? "reservations-body" : "stats-container"
-        );
-        container.classList.remove("loading");
-      }
-
-      function showError(message) {
-        const errorDiv = document.getElementById("error-message");
-        errorDiv.textContent = message;
-        errorDiv.style.display = "block";
-
-        setTimeout(() => {
-          errorDiv.style.display = "none";
-        }, 5000);
-      }
-
-      function showSuccess(message) {
-        const successDiv = document.getElementById("success-message");
-        successDiv.textContent = message;
-        successDiv.style.display = "block";
-
-        setTimeout(() => {
-          successDiv.style.display = "none";
-        }, 3000);
-      }
-
-      // Fonctions d'action
-      async function updateReservationStatus(reservationId, newStatus, event) {
-        console.log("Mise à jour du statut:", reservationId, newStatus);
-
-        const actionTexts = {
-          confirme: "confirmer",
-          annulee: "annuler",
-          "en attente": "remettre en attente",
-        };
-
-        const actionText = actionTexts[newStatus] || "modifier";
-
-        if (
-          !confirm(`Êtes-vous sûr de vouloir ${actionText} cette réservation ?`)
-        ) {
-          return;
-        }
-
-        let button = null;
-        let originalHTML = "";
-
-        try {
-          // Afficher un indicateur de chargement sur le bouton cliqué
-          if (event && event.target) {
-            button = event.target.closest(".action-btn");
-            if (button) {
-              originalHTML = button.innerHTML;
-              button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-              button.disabled = true;
-              button.style.opacity = "0.6";
-            }
-          }
-
-          const response = await fetch("admin-reservations.php", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              action: "update_status",
-              reservation_id: reservationId,
-              status: newStatus,
-            }),
-          });
-
-          const result = await response.json();
-          console.log("Réponse du serveur:", result);
-
-          if (result.success) {
-            let message = "";
-            let icon = "✅";
-
-            switch (newStatus) {
-              case "confirme":
-                message = "Réservation confirmée avec succès";
-                icon = "✅";
-                break;
-              case "annulee":
-                message = "Réservation annulée avec succès";
-                icon = "❌";
-                break;
-              case "en attente":
-                message = "Réservation remise en attente";
-                icon = "⏳";
-                break;
-              default:
-                message = "Statut mis à jour avec succès";
-                icon = "✓";
-            }
-            showSuccess(`${icon} ${message}`);
-
-            // Recharger les données après un court délai
-            setTimeout(() => {
-              loadStats();
-              loadReservations(currentPage);
-            }, 1000);
-          } else {
-            showError(
-              "Erreur: " +
-                (result.error || "Erreur inconnue lors de la mise à jour")
-            );
-            // Restaurer le bouton en cas d'erreur
-            if (button) {
-              button.innerHTML = originalHTML;
-              button.disabled = false;
-              button.style.opacity = "1";
-            }
-          }
-        } catch (error) {
-          console.error("Erreur:", error);
-          showError("Erreur de connexion: " + error.message);
-          // Restaurer le bouton en cas d'erreur
-          if (button) {
-            button.innerHTML = originalHTML;
-            button.disabled = false;
-            button.style.opacity = "1";
-          }
-        }
-      }
-
-      function viewReservation(reservationId) {
-        alert(`Détails de la réservation #${reservationId}`);
-        // Dans une implémentation réelle, ouvrir un modal ou une page détaillée
-      }
-
-      function exportData() {
-        // Implémentation basique de l'export
-        const statusFilter = document.getElementById("status-filter").value;
-        const searchTerm = document.getElementById("search-input").value;
-
-        const params = new URLSearchParams({
-          action: "export",
-          status: statusFilter,
-          search: searchTerm,
-        });
-
-        window.open(`admin-reservations.php?${params}`, "_blank");
-      }
-
-      // Test de connexion
-      async function testConnection() {
-        try {
-          console.log("Test de connexion...");
-          const response = await fetch(
-            "admin-reservations.php?action=get_stats"
-          );
-          const result = await response.json();
-          console.log("Test de connexion résultat:", result);
-          return result.success;
-        } catch (error) {
-          console.error("Échec du test de connexion:", error);
-          return false;
-        }
-      }
-      /* *********************************************************************************************/
-      // Appeler le test au chargement
-      document.addEventListener("DOMContentLoaded", async function () {
-        const connected = await testConnection();
-        if (!connected) {
-          console.warn("Utilisation des données de démonstration");
-        }
-      });
     </script>
-  </body>
+
+<!-- Ajoutez cette section dans votre admin-interface.php -->
+
+<!-- Styles pour le modal d'export -->
+<style>
+.export-modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+}
+.export-modal-content {
+    background-color: white;
+    margin: 5% auto;
+    padding: 30px;
+    border-radius: 10px;
+    width: 80%;
+    max-width: 800px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    position: relative;
+}
+.export-close {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    font-size: 28px;
+    cursor: pointer;
+    color: #aaa;
+    background: none;
+    border: none;
+}
+.export-close:hover {
+    color: #000;
+}
+.export-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 15px;
+    margin: 25px 0;
+}
+.export-card {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+    border: 2px solid #e9ecef;
+    transition: all 0.3s ease;
+}
+.export-card:hover {
+    border-color: #007bff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+.export-card-btn {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    background: #28a745;
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    margin-top: 10px;
+    transition: background 0.3s ease;
+}
+.export-card-btn:hover {
+    background: #218838;
+}
+.export-info {
+    background: #e7f3ff;
+    padding: 15px;
+    border-radius: 5px;
+    margin-top: 20px;
+    border-left: 4px solid #007bff;
+}
+.export-section {
+    margin: 20px 0;
+    padding: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 10px;
+}
+.export-main-btn {
+    background: white;
+    color: #667eea;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 5px;
+    margin-top: 10px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 16px;
+    transition: transform 0.2s ease;
+}
+.export-main-btn:hover {
+    transform: scale(1.05);
+}
+</style>
+
+<!-- Section d'export dans l'interface admin -->
+<div class="export-section">
+    <h3 style="margin: 0; font-size: 24px;">📊 Export des données CSV</h3>
+    <p style="margin: 10px 0 0 0; opacity: 0.9; font-size: 16px;">Exportez toutes les données de l'hôtel en format CSV</p>
+    <button onclick="openExportModal()" class="export-main-btn">
+        📥 Ouvrir l'export CSV
+    </button>
+</div>
+
+<!-- Modal d'export -->
+<div id="exportModal" class="export-modal">
+    <div class="export-modal-content">
+        <button class="export-close" onclick="closeExportModal()">&times;</button>
+        <h2 style="color: #333; margin-bottom: 10px; text-align: center;">📊 Export des données CSV</h2>
+        <p style="text-align: center; color: #666; margin-bottom: 20px;">Sélectionnez les données à exporter</p>
+        
+        <div class="export-grid">
+            <div class="export-card">
+                <h4 style="margin: 0 0 10px 0; color: #333;">👥 Clients</h4>
+                <p style="margin: 0; color: #666; font-size: 14px;">Liste de tous les clients</p>
+                <button class="export-card-btn" onclick="exportTable('clients')">
+                    📥 Télécharger
+                </button>
+            </div>
+            
+            <div class="export-card">
+                <h4 style="margin: 0 0 10px 0; color: #333;">🛏️ Chambres</h4>
+                <p style="margin: 0; color: #666; font-size: 14px;">Inventaire des chambres</p>
+                <button class="export-card-btn" onclick="exportTable('chambres')">
+                    📥 Télécharger
+                </button>
+            </div>
+            
+            <div class="export-card">
+                <h4 style="margin: 0 0 10px 0; color: #333;">📅 Réservations</h4>
+                <p style="margin: 0; color: #666; font-size: 14px;">Historique des réservations</p>
+                <button class="export-card-btn" onclick="exportTable('reservations')">
+                    📥 Télécharger
+                </button>
+            </div>
+            
+            <div class="export-card">
+                <h4 style="margin: 0 0 10px 0; color: #333;">💰 Paiements</h4>
+                <p style="margin: 0; color: #666; font-size: 14px;">Transactions et paiements</p>
+                <button class="export-card-btn" onclick="exportTable('paiements')">
+                    📥 Télécharger
+                </button>
+            </div>
+            
+            <div class="export-card">
+                <h4 style="margin: 0 0 10px 0; color: #333;">🔗 Réservation Chambres</h4>
+                <p style="margin: 0; color: #666; font-size: 14px;">Liens réservations-chambres</p>
+                <button class="export-card-btn" onclick="exportTable('reservation_chambres')">
+                    📥 Télécharger
+                </button>
+            </div>
+        </div>
+        
+        <div class="export-info">
+            <h4 style="margin: 0 0 10px 0; color: #007bff;">💡 Comment utiliser</h4>
+            <p style="margin: 5px 0; font-size: 14px;">• Cliquez sur un bouton pour télécharger le CSV</p>
+            <p style="margin: 5px 0; font-size: 14px;">• Le fichier sera sauvegardé dans votre dossier <strong>Téléchargements</strong></p>
+            <p style="margin: 5px 0; font-size: 14px;">• Le fichier s'ouvre directement dans Excel/LibreOffice</p>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px;">
+            <button onclick="closeExportModal()" style="background: #6c757d; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+                Fermer
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+// Fonctions pour gérer le modal d'export
+function openExportModal() {
+    document.getElementById('exportModal').style.display = 'block';
+}
+
+function closeExportModal() {
+    document.getElementById('exportModal').style.display = 'none';
+}
+
+function exportTable(tableName) {
+    // Ouvrir le téléchargement direct dans un nouvel onglet
+    const url = `../hotel/hotel-csv-export/public/download.php?table=${tableName}`;
+    window.open(url, '_blank');
+    
+    // Afficher un message de confirmation
+    showExportMessage(`📥 Téléchargement de ${tableName} en cours...`);
+    
+    // Fermer le modal après un court délai
+    setTimeout(() => {
+        closeExportModal();
+    }, 1500);
+}
+
+function showExportMessage(message) {
+    // Créer un message temporaire
+    const messageDiv = document.createElement('div');
+    messageDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #28a745;
+        color: white;
+        padding: 15px 20px;
+        border-radius: 5px;
+        z-index: 1001;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        font-size: 14px;
+    `;
+    messageDiv.textContent = message;
+    document.body.appendChild(messageDiv);
+    
+    // Supprimer après 3 secondes
+    setTimeout(() => {
+        if (document.body.contains(messageDiv)) {
+            document.body.removeChild(messageDiv);
+        }
+    }, 3000);
+}
+
+// Fermer le modal en cliquant à l'extérieur
+window.onclick = function(event) {
+    const modal = document.getElementById('exportModal');
+    if (event.target === modal) {
+        closeExportModal();
+    }
+}
+
+// Fermer avec la touche Echap
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeExportModal();
+    }
+});
+</script>
+
+
+</body>
 </html>
