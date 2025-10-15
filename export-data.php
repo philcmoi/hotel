@@ -70,19 +70,40 @@ class DataExporter {
                 break;
                 
             case 'clients':
-                $query = "SELECT 
-                            idClient,
-                            nom,
-                            prenom,
-                            email,
-                            telephone,
-                            adresse,
-                            ville,
-                            code_postal,
-                            pays,
-                            date_creation
-                          FROM clients 
-                          ORDER BY date_creation DESC";
+                // Vérifier d'abord la structure de la table clients
+                $checkTable = $this->conn->query("DESCRIBE clients")->fetchAll(PDO::FETCH_COLUMN);
+                
+                // Construire la requête dynamiquement en fonction des colonnes existantes
+                $columns = [];
+                if (in_array('idClient', $checkTable)) $columns[] = 'idClient';
+                if (in_array('nom', $checkTable)) $columns[] = 'nom';
+                if (in_array('prenom', $checkTable)) $columns[] = 'prenom';
+                if (in_array('email', $checkTable)) $columns[] = 'email';
+                if (in_array('telephone', $checkTable)) $columns[] = 'telephone';
+                if (in_array('adresse', $checkTable)) $columns[] = 'adresse';
+                if (in_array('ville', $checkTable)) $columns[] = 'ville';
+                if (in_array('code_postal', $checkTable)) $columns[] = 'code_postal';
+                if (in_array('pays', $checkTable)) $columns[] = 'pays';
+                if (in_array('date_creation', $checkTable)) $columns[] = 'date_creation';
+                if (in_array('date_inscription', $checkTable)) $columns[] = 'date_inscription';
+                if (in_array('created_at', $checkTable)) $columns[] = 'created_at';
+                
+                if (empty($columns)) {
+                    throw new Exception("Aucune colonne valide trouvée dans la table clients");
+                }
+                
+                $query = "SELECT " . implode(', ', $columns) . " FROM clients ORDER BY ";
+                
+                // Déterminer la colonne de tri par date si elle existe
+                if (in_array('date_creation', $columns)) {
+                    $query .= "date_creation DESC";
+                } elseif (in_array('date_inscription', $columns)) {
+                    $query .= "date_inscription DESC";
+                } elseif (in_array('created_at', $columns)) {
+                    $query .= "created_at DESC";
+                } else {
+                    $query .= "idClient DESC";
+                }
                 break;
                 
             case 'chambres':
@@ -115,7 +136,7 @@ class DataExporter {
         
         $stmt = $this->conn->prepare($query);
         
-        if ($startDate && $endDate) {
+        if ($startDate && $endDate && $type === 'reservations') {
             $stmt->bindParam(':start_date', $startDate);
             $stmt->bindParam(':end_date', $endDate);
         }
@@ -124,75 +145,59 @@ class DataExporter {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    // Générer le CSV
-    public function generateCSV($data, $filename) {
+    // Générer le contenu CSV
+    public function generateCSVContent($data) {
         if (empty($data)) {
             throw new Exception("Aucune donnée à exporter");
         }
 
-        // Créer le dossier d'export s'il n'existe pas
-        $exportDir = __DIR__ . '/hotel-csv-export';
-        if (!is_dir($exportDir)) {
-            mkdir($exportDir, 0755, true);
-        }
-
-        $filepath = $exportDir . '/' . $filename;
+        $output = fopen('php://temp', 'r+');
         
-        // Ouvrir le fichier en écriture
-        $file = fopen($filepath, 'w');
-        
-        if (!$file) {
-            throw new Exception("Impossible de créer le fichier d'export");
-        }
-
         // Ajouter BOM UTF-8 pour Excel
-        fwrite($file, "\xEF\xBB\xBF");
+        fwrite($output, "\xEF\xBB\xBF");
         
         // Écrire l'en-tête
         $headers = array_keys($data[0]);
-        fputcsv($file, $headers, ';');
+        fputcsv($output, $headers, ';');
         
         // Écrire les données
         foreach ($data as $row) {
-            fputcsv($file, $row, ';');
+            fputcsv($output, $row, ';');
         }
         
-        fclose($file);
+        rewind($output);
+        $csvContent = stream_get_contents($output);
+        fclose($output);
         
-        return $filepath;
+        return $csvContent;
     }
 
-    // Générer le JSON
-    public function generateJSON($data, $filename) {
+    // Générer le contenu JSON
+    public function generateJSONContent($data) {
         if (empty($data)) {
             throw new Exception("Aucune donnée à exporter");
         }
 
-        // Créer le dossier d'export s'il n'existe pas
-        $exportDir = __DIR__ . '/hotel-csv-export';
-        if (!is_dir($exportDir)) {
-            mkdir($exportDir, 0755, true);
-        }
+        return json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    }
 
-        $filepath = $exportDir . '/' . $filename;
-        
-        // Écrire les données JSON
-        $jsonData = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-        
-        if (file_put_contents($filepath, $jsonData) === false) {
-            throw new Exception("Impossible de créer le fichier d'export");
+    // Nouvelle méthode pour déboguer la structure de la table
+    public function debugTableStructure($tableName) {
+        try {
+            $stmt = $this->conn->query("DESCRIBE " . $tableName);
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            throw new Exception("Impossible de récupérer la structure de la table: " . $e->getMessage());
         }
-        
-        return $filepath;
     }
 }
 
 try {
-    // Récupérer les paramètres
-    $type = $_GET['type'] ?? '';
-    $format = $_GET['format'] ?? 'csv';
-    $startDate = $_GET['start_date'] ?? null;
-    $endDate = $_GET['end_date'] ?? null;
+    // Récupérer les paramètres (POST au lieu de GET)
+    $type = $_POST['type'] ?? '';
+    $format = $_POST['format'] ?? 'csv';
+    $startDate = $_POST['start_date'] ?? null;
+    $endDate = $_POST['end_date'] ?? null;
 
     if (empty($type)) {
         throw new Exception("Type d'export non spécifié");
@@ -200,44 +205,53 @@ try {
 
     $exporter = new DataExporter();
     
+    // Debug: vérifier la structure de la table si c'est pour les clients
+    if ($type === 'clients') {
+        error_log("Structure de la table clients: " . print_r($exporter->debugTableStructure('clients'), true));
+    }
+    
     // Récupérer les données
     $data = $exporter->getData($type, $startDate, $endDate);
+    
+    if (empty($data)) {
+        throw new Exception("Aucune donnée trouvée pour l'export");
+    }
     
     // Générer le nom de fichier
     $timestamp = date('Y-m-d_H-i-s');
     $filename = "{$type}_export_{$timestamp}.{$format}";
     
-    // Générer le fichier
+    // Générer le contenu
     if ($format === 'json') {
-        $filepath = $exporter->generateJSON($data, $filename);
+        $content = $exporter->generateJSONContent($data);
         $mimeType = 'application/json';
     } else {
-        $filepath = $exporter->generateCSV($data, $filename);
-        $mimeType = 'text/csv';
+        $content = $exporter->generateCSVContent($data);
+        $mimeType = 'text/csv; charset=utf-8';
     }
 
-    // Télécharger le fichier
-    if (file_exists($filepath)) {
-        header('Content-Description: File Transfer');
-        header('Content-Type: ' . $mimeType);
-        header('Content-Disposition: attachment; filename="' . basename($filepath) . '"');
-        header('Expires: 0');
-        header('Cache-Control: must-revalidate');
-        header('Pragma: public');
-        header('Content-Length: ' . filesize($filepath));
-        
-        readfile($filepath);
-        
-        // Supprimer le fichier après téléchargement (optionnel)
-        unlink($filepath);
-        
-        exit;
-    } else {
-        throw new Exception("Fichier d'export non trouvé");
-    }
+    // Envoyer les headers pour le téléchargement
+    header('Content-Description: File Transfer');
+    header('Content-Type: ' . $mimeType);
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Expires: 0');
+    header('Cache-Control: must-revalidate');
+    header('Pragma: public');
+    header('Content-Length: ' . strlen($content));
+    
+    // Output du contenu
+    echo $content;
+    exit;
 
 } catch (Exception $e) {
+    error_log("Erreur d'export: " . $e->getMessage());
+    
     // Rediriger vers le tableau de bord avec un message d'erreur
-    header('Location: admin-interface.php?export_error=' . urlencode($e->getMessage()));
+    if (isset($_SERVER['HTTP_REFERER'])) {
+        header('Location: ' . $_SERVER['HTTP_REFERER'] . '?export_error=' . urlencode($e->getMessage()));
+    } else {
+        header('Location: admin-interface.php?export_error=' . urlencode($e->getMessage()));
+    }
     exit;
 }
+?>

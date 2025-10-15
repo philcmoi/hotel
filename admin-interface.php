@@ -87,47 +87,6 @@ class AdminDashboard {
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
-
-    // Exporter les données en CSV
-    public function exportData($type, $startDate = null, $endDate = null) {
-        switch($type) {
-            case 'reservations':
-                $query = "SELECT r.*, c.nom, c.prenom, c.email, c.telephone,
-                                 GROUP_CONCAT(ch.numeroChambre) as chambres
-                          FROM reservations r
-                          LEFT JOIN clients c ON r.idClient = c.idClient
-                          LEFT JOIN reservation_chambres rc ON r.idReservation = rc.idReservation
-                          LEFT JOIN chambres ch ON rc.idChambre = ch.idChambre";
-                
-                if ($startDate && $endDate) {
-                    $query .= " WHERE r.date_reservation BETWEEN :start_date AND :end_date";
-                }
-                
-                $query .= " GROUP BY r.idReservation ORDER BY r.date_reservation DESC";
-                break;
-                
-            case 'clients':
-                $query = "SELECT * FROM clients ORDER BY date_creation DESC";
-                break;
-                
-            case 'chambres':
-                $query = "SELECT * FROM chambres ORDER BY numeroChambre ASC";
-                break;
-                
-            default:
-                throw new Exception("Type d'export non valide");
-        }
-        
-        $stmt = $this->conn->prepare($query);
-        
-        if ($startDate && $endDate) {
-            $stmt->bindParam(':start_date', $startDate);
-            $stmt->bindParam(':end_date', $endDate);
-        }
-        
-        $stmt->execute();
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
 }
 
 try {
@@ -982,7 +941,7 @@ try {
             }
         });
 
-        // Fonction d'export
+        // Fonction d'export avec téléchargement direct
         function exportData() {
             const exportType = document.getElementById('export-type').value;
             const exportFormat = document.getElementById('export-format').value;
@@ -994,14 +953,40 @@ try {
                 return;
             }
 
-            // Construction de l'URL
-            let url = `export-data.php?type=${exportType}&format=${exportFormat}`;
+            // Créer un formulaire dynamique pour envoyer les données
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = 'export-data.php';
+            form.style.display = 'none';
+
+            // Ajouter les champs
+            const typeInput = document.createElement('input');
+            typeInput.name = 'type';
+            typeInput.value = exportType;
+            form.appendChild(typeInput);
+
+            const formatInput = document.createElement('input');
+            formatInput.name = 'format';
+            formatInput.value = exportFormat;
+            form.appendChild(formatInput);
+
             if (startDate && endDate) {
-                url += `&start_date=${startDate}&end_date=${endDate}`;
+                const startInput = document.createElement('input');
+                startInput.name = 'start_date';
+                startInput.value = startDate;
+                form.appendChild(startInput);
+
+                const endInput = document.createElement('input');
+                endInput.name = 'end_date';
+                endInput.value = endDate;
+                form.appendChild(endInput);
             }
 
-            // Ouvrir dans un nouvel onglet pour le téléchargement
-            window.open(url, '_blank');
+            // Ajouter le formulaire à la page et le soumettre
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+
             hideExportModal();
             showSuccess('Export lancé avec succès');
         }
