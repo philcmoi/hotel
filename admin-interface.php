@@ -1,5 +1,4 @@
 <?php
-// admin-interface.php - TABLEAU DE BORD ADMINISTRATEUR
 session_start();
 
 // Vérifier l'authentification
@@ -8,864 +7,1045 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
     exit;
 }
 
-// Inclure la configuration
 require_once 'config.php';
 
-// Connexion à la base de données
-try {
-    $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8", DB_USER, DB_PASS);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-} catch(PDOException $e) {
-    die("Erreur de connexion : " . $e->getMessage());
+class Database {
+    private $host = DB_HOST;
+    private $db_name = DB_NAME;
+    private $username = DB_USER;
+    private $password = DB_PASS;
+    public $conn;
+
+    public function getConnection() {
+        $this->conn = null;
+        try {
+            $this->conn = new PDO("mysql:host=" . $this->host . ";dbname=" . $this->db_name . ";charset=utf8", $this->username, $this->password);
+            $this->conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $this->conn->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+        } catch(PDOException $exception) {
+            error_log("Erreur de connexion BD: " . $exception->getMessage());
+            throw new Exception("Erreur de connexion à la base de données");
+        }
+        return $this->conn;
+    }
 }
 
-// Récupérer les statistiques
+class AdminDashboard {
+    private $conn;
+    
+    public function __construct() {
+        $database = new Database();
+        $this->conn = $database->getConnection();
+    }
+
+    // Récupérer les statistiques générales
+    public function getDashboardStats() {
+        $stats = [];
+        
+        // Total des réservations
+        $query = "SELECT COUNT(*) as total FROM reservations";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        $stats['total_reservations'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+        
+        // Réservations du mois
+        $query = "SELECT COUNT(*) as total FROM reservations WHERE MONTH(date_reservation) = MONTH(CURRENT_DATE()) AND YEAR(date_reservation) = YEAR(CURRENT_DATE())";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        $stats['month_reservations'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+        
+        // Chiffre d'affaires du mois
+        $query = "SELECT COALESCE(SUM(prix_total), 0) as total FROM reservations WHERE MONTH(date_reservation) = MONTH(CURRENT_DATE()) AND YEAR(date_reservation) = YEAR(CURRENT_DATE()) AND etat_reservation = 'confirme'";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        $stats['month_revenue'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+        
+        // Total des clients
+        $query = "SELECT COUNT(*) as total FROM clients";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        $stats['total_clients'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+        
+        return $stats;
+    }
+
+    // Récupérer les réservations récentes
+    public function getRecentReservations($limit = 5) {
+        $query = "SELECT r.idReservation, r.date_arrivee, r.date_depart, r.etat_reservation, 
+                         c.nom, c.prenom, c.email,
+                         GROUP_CONCAT(ch.numeroChambre) as chambres
+                  FROM reservations r
+                  LEFT JOIN clients c ON r.idClient = c.idClient
+                  LEFT JOIN reservation_chambres rc ON r.idReservation = rc.idReservation
+                  LEFT JOIN chambres ch ON rc.idChambre = ch.idChambre
+                  GROUP BY r.idReservation
+                  ORDER BY r.date_reservation DESC 
+                  LIMIT :limit";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    // Exporter les données en CSV
+    public function exportData($type, $startDate = null, $endDate = null) {
+        switch($type) {
+            case 'reservations':
+                $query = "SELECT r.*, c.nom, c.prenom, c.email, c.telephone,
+                                 GROUP_CONCAT(ch.numeroChambre) as chambres
+                          FROM reservations r
+                          LEFT JOIN clients c ON r.idClient = c.idClient
+                          LEFT JOIN reservation_chambres rc ON r.idReservation = rc.idReservation
+                          LEFT JOIN chambres ch ON rc.idChambre = ch.idChambre";
+                
+                if ($startDate && $endDate) {
+                    $query .= " WHERE r.date_reservation BETWEEN :start_date AND :end_date";
+                }
+                
+                $query .= " GROUP BY r.idReservation ORDER BY r.date_reservation DESC";
+                break;
+                
+            case 'clients':
+                $query = "SELECT * FROM clients ORDER BY date_creation DESC";
+                break;
+                
+            case 'chambres':
+                $query = "SELECT * FROM chambres ORDER BY numeroChambre ASC";
+                break;
+                
+            default:
+                throw new Exception("Type d'export non valide");
+        }
+        
+        $stmt = $this->conn->prepare($query);
+        
+        if ($startDate && $endDate) {
+            $stmt->bindParam(':start_date', $startDate);
+            $stmt->bindParam(':end_date', $endDate);
+        }
+        
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+}
+
 try {
-    // Statistiques des réservations
-    $stmt = $pdo->query("
-        SELECT 
-            COUNT(*) as total_reservations,
-            SUM(CASE WHEN etat_reservation = 'confirme' THEN 1 ELSE 0 END) as reservations_confirmees,
-            SUM(CASE WHEN etat_reservation = 'en attente' THEN 1 ELSE 0 END) as reservations_attente,
-            SUM(CASE WHEN etat_reservation = 'annulee' THEN 1 ELSE 0 END) as reservations_annulees
-        FROM reservations
-    ");
-    $stats_reservations = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    // Statistiques des clients
-    $stmt = $pdo->query("SELECT COUNT(*) as total_clients FROM clients");
-    $stats_clients = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    // Statistiques des chambres
-    $stmt = $pdo->query("
-        SELECT 
-            COUNT(*) as total_chambres,
-            SUM(CASE WHEN disponible = 1 THEN 1 ELSE 0 END) as chambres_disponibles
-        FROM chambres
-    ");
-    $stats_chambres = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    // Revenus totaux (réservations confirmées uniquement)
-    $stmt = $pdo->query("
-        SELECT COALESCE(SUM(prix_total), 0) as revenus_totaux 
-        FROM reservations 
-        WHERE etat_reservation = 'confirme'
-    ");
-    $revenus = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    // Dernières réservations
-    $stmt = $pdo->query("
-        SELECT r.*, c.nom, c.prenom 
-        FROM reservations r 
-        LEFT JOIN clients c ON r.idClient = c.idClient 
-        ORDER BY r.date_reservation DESC 
-        LIMIT 5
-    ");
-    $dernieres_reservations = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-} catch(PDOException $e) {
-    $error = "Erreur lors de la récupération des données : " . $e->getMessage();
-    // Initialiser les variables pour éviter les erreurs
-    $stats_reservations = ['total_reservations' => 0, 'reservations_confirmees' => 0, 'reservations_attente' => 0, 'reservations_annulees' => 0];
-    $stats_clients = ['total_clients' => 0];
-    $stats_chambres = ['total_chambres' => 0, 'chambres_disponibles' => 0];
-    $revenus = ['revenus_totaux' => 0];
-    $dernieres_reservations = [];
+    $dashboard = new AdminDashboard();
+    $stats = $dashboard->getDashboardStats();
+    $recentReservations = $dashboard->getRecentReservations();
+} catch (Exception $e) {
+    $error = $e->getMessage();
+    $stats = ['total_reservations' => 0, 'month_reservations' => 0, 'month_revenue' => 0, 'total_clients' => 0];
+    $recentReservations = [];
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tableau de Bord - <?php echo APP_NAME; ?></title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        :root {
+            --primary: #4361ee;
+            --primary-dark: #3a56d4;
+            --secondary: #7209b7;
+            --success: #4cc9f0;
+            --warning: #f72585;
+            --light: #f8f9fa;
+            --dark: #212529;
+            --gray: #6c757d;
+            --border: #dee2e6;
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-color: #f5f7fb;
+            color: var(--dark);
+            line-height: 1.6;
+        }
+
+        .admin-container {
+            display: flex;
             min-height: 100vh;
-            color: #333;
         }
 
-        .dashboard-container {
-            min-height: 100vh;
-            background: #f5f5f5;
+        /* Sidebar */
+        .sidebar {
+            width: 250px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            padding: 20px 0;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+            z-index: 100;
         }
 
-        .admin-header {
-            background: white;
-            padding: 1rem 2rem;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            border-bottom: 3px solid #667eea;
+        .logo {
+            padding: 0 20px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 20px;
         }
 
-        .header-content {
+        .logo h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .logo span {
+            color: var(--success);
+        }
+
+        .nav-links {
+            list-style: none;
+        }
+
+        .nav-links li {
+            padding: 12px 20px;
+            transition: all 0.3s ease;
+        }
+
+        .nav-links li:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .nav-links li.active {
+            background-color: rgba(255, 255, 255, 0.2);
+            border-left: 4px solid var(--success);
+        }
+
+        .nav-links a {
+            color: white;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .nav-links i {
+            font-size: 1.2rem;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            max-width: 1400px;
-            margin: 0 auto;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header h2 {
+            font-size: 1.8rem;
+            font-weight: 600;
+            color: var(--dark);
         }
 
         .user-info {
             display: flex;
             align-items: center;
-            gap: 15px;
+            gap: 10px;
         }
 
-        .btn-logout {
-            background: #667eea;
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: var(--primary);
             color: white;
-            padding: 8px 15px;
-            border: none;
-            border-radius: 5px;
-            text-decoration: none;
-            transition: background 0.3s;
-            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
         }
 
-        .btn-logout:hover {
-            background: #5a6fd8;
-        }
-
-        .dashboard-main {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-
-        .welcome-section {
-            background: white;
-            border-radius: 15px;
-            padding: 2rem;
-            margin-bottom: 2rem;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-
-        .welcome-section h1 {
-            color: #2c3e50;
-            margin-bottom: 0.5rem;
-            font-size: 2.5rem;
-        }
-
-        .welcome-section p {
-            color: #7f8c8d;
-            font-size: 1.1rem;
-        }
-
-        /* Grille des statistiques */
-        .stats-grid {
+        /* Stats Cards */
+        .stats-container {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 25px;
-            margin-bottom: 3rem;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
         }
 
         .stat-card {
             background: white;
-            padding: 2rem;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-            text-align: center;
-            transition: transform 0.3s, box-shadow 0.3s;
-            border-left: 5px solid;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s ease;
         }
 
         .stat-card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
         }
 
-        .stat-card.reservations { border-left-color: #e74c3c; }
-        .stat-card.clients { border-left-color: #3498db; }
-        .stat-card.chambres { border-left-color: #2ecc71; }
-        .stat-card.revenus { border-left-color: #f39c12; }
+        .stat-card.reservations {
+            border-top: 4px solid var(--primary);
+        }
+
+        .stat-card.month-reservations {
+            border-top: 4px solid var(--success);
+        }
+
+        .stat-card.revenue {
+            border-top: 4px solid var(--warning);
+        }
+
+        .stat-card.clients {
+            border-top: 4px solid #6c757d;
+        }
 
         .stat-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
+            font-size: 2rem;
+            margin-bottom: 15px;
+            opacity: 0.8;
         }
 
-        .stat-number {
-            font-size: 2.5rem;
-            font-weight: bold;
-            margin-bottom: 0.5rem;
-            color: #2c3e50;
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 5px 0;
         }
 
         .stat-label {
-            color: #7f8c8d;
-            font-size: 1.1rem;
-            margin-bottom: 1rem;
-        }
-
-        .stat-details {
-            background: #f8f9fa;
-            padding: 1rem;
-            border-radius: 10px;
-            margin-top: 1rem;
-        }
-
-        .stat-detail {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 0.5rem;
+            color: var(--gray);
             font-size: 0.9rem;
         }
 
-        /* Grille des actions rapides */
-        .actions-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 25px;
-            margin-bottom: 3rem;
-        }
-
-        .action-card {
+        /* Quick Actions */
+        .quick-actions {
             background: white;
-            padding: 2rem;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-            text-align: center;
-            transition: all 0.3s;
-            border: 2px solid transparent;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
         }
 
-        .action-card:hover {
-            border-color: #667eea;
-            transform: translateY(-3px);
-        }
-
-        .action-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-            color: #667eea;
-        }
-
-        .action-title {
+        .quick-actions h3 {
+            margin-bottom: 20px;
             font-size: 1.3rem;
-            margin-bottom: 1rem;
-            color: #2c3e50;
+            font-weight: 600;
         }
 
-        .action-description {
-            color: #7f8c8d;
-            margin-bottom: 1.5rem;
-            line-height: 1.5;
+        .action-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
         }
 
-        .btn-action {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 12px 25px;
+        .btn {
+            padding: 12px 20px;
             border: none;
             border-radius: 8px;
-            text-decoration: none;
-            display: inline-block;
-            font-weight: 600;
-            transition: all 0.3s;
+            font-weight: 500;
             cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            font-size: 0.95rem;
+            text-align: left;
         }
 
-        .btn-action:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
         }
 
-        /* Section des dernières réservations */
-        .recent-section {
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
+        }
+
+        .btn-success {
+            background-color: var(--success);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background-color: #3ab8dd;
+        }
+
+        .btn-warning {
+            background-color: var(--warning);
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background-color: #e51677;
+        }
+
+        /* Recent Reservations */
+        .recent-reservations {
             background: white;
-            border-radius: 15px;
-            padding: 2rem;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
         }
 
         .section-header {
             display: flex;
-            justify-content: between;
+            justify-content: space-between;
             align-items: center;
-            margin-bottom: 1.5rem;
-            padding-bottom: 1rem;
-            border-bottom: 2px solid #f8f9fa;
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
         }
 
-        .section-header h2 {
-            color: #2c3e50;
-            font-size: 1.5rem;
-        }
-
-        .view-all {
-            color: #667eea;
-            text-decoration: none;
+        .section-header h3 {
+            font-size: 1.3rem;
             font-weight: 600;
         }
 
-        .reservations-list {
-            display: grid;
-            gap: 1rem;
+        table {
+            width: 100%;
+            border-collapse: collapse;
         }
 
-        .reservation-item {
-            display: grid;
-            grid-template-columns: auto 1fr auto auto;
-            gap: 1rem;
-            align-items: center;
-            padding: 1rem;
-            background: #f8f9fa;
-            border-radius: 10px;
-            transition: background 0.3s;
-        }
-
-        .reservation-item:hover {
-            background: #e9ecef;
-        }
-
-        .reservation-id {
-            font-weight: bold;
-            color: #667eea;
-            font-size: 1.1rem;
-        }
-
-        .reservation-client {
+        th {
+            background-color: #f8f9fa;
+            padding: 15px;
+            text-align: left;
             font-weight: 600;
-            color: #2c3e50;
+            color: var(--dark);
+            border-bottom: 1px solid var(--border);
         }
 
-        .reservation-dates {
-            color: #7f8c8d;
-            font-size: 0.9rem;
+        td {
+            padding: 15px;
+            border-bottom: 1px solid var(--border);
         }
 
-        .reservation-status {
-            padding: 6px 12px;
-            border-radius: 15px;
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .status {
+            padding: 5px 10px;
+            border-radius: 20px;
             font-size: 0.8rem;
-            font-weight: 600;
+            font-weight: 500;
+            text-align: center;
+            display: inline-block;
         }
 
-        .status-confirme { background: #d4edda; color: #155724; }
-        .status-attente { background: #fff3cd; color: #856404; }
-        .status-annulee { background: #f8d7da; color: #721c24; }
+        .status.confirme {
+            background-color: rgba(76, 201, 240, 0.1);
+            color: #4cc9f0;
+        }
 
-        /* Messages d'erreur */
+        .status.en-attente {
+            background-color: rgba(247, 37, 133, 0.1);
+            color: #f72585;
+        }
+
+        .status.annulee {
+            background-color: rgba(108, 117, 125, 0.1);
+            color: #6c757d;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 10px;
+            width: 100%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 10;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.3rem;
+        }
+
+        .modal-body {
+            padding: 20px;
+        }
+
+        .modal-footer {
+            padding: 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            position: sticky;
+            bottom: 0;
+            background: white;
+            z-index: 10;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--gray);
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--dark);
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.2);
+        }
+
+        .form-select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 1rem;
+            background: white;
+            cursor: pointer;
+        }
+
+        .form-select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.2);
+        }
+
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid var(--border);
+            color: var(--dark);
+        }
+
+        .btn-outline:hover {
+            background-color: #f8f9fa;
+        }
+
+        /* Messages */
         .error-message {
-            background: #f8d7da;
-            color: #721c24;
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 1rem;
-            text-align: center;
+            background-color: #ff4757;
+            color: white;
+            padding: 12px 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .success-message {
+            background-color: #2ed573;
+            color: white;
+            padding: 12px 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
         }
 
         /* Responsive */
-        @media (max-width: 768px) {
-            .dashboard-main {
-                padding: 1rem;
+        @media (max-width: 992px) {
+            .admin-container {
+                flex-direction: column;
             }
-            
-            .header-content {
+
+            .sidebar {
+                width: 100%;
+                height: auto;
+            }
+
+            .nav-links {
+                display: flex;
+                overflow-x: auto;
+            }
+
+            .nav-links li {
+                white-space: nowrap;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                padding: 15px;
+            }
+
+            .header {
                 flex-direction: column;
                 gap: 15px;
-                text-align: center;
+                align-items: flex-start;
             }
-            
-            .stats-grid,
-            .actions-grid {
+
+            .stats-container {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .action-buttons {
                 grid-template-columns: 1fr;
             }
-            
-            .reservation-item {
-                grid-template-columns: 1fr;
-                text-align: center;
-                gap: 0.5rem;
+
+            .modal {
+                padding: 10px;
+                align-items: flex-start;
             }
-            
-            .welcome-section h1 {
-                font-size: 2rem;
+
+            .modal-content {
+                max-height: 95vh;
+                margin-top: 20px;
+                margin-bottom: 20px;
+            }
+
+            .modal-body {
+                padding: 15px;
+            }
+
+            .modal-footer {
+                padding: 15px;
+                flex-direction: column;
+            }
+
+            .modal-footer .btn {
+                width: 100%;
+                justify-content: center;
+            }
+
+            table {
+                font-size: 14px;
+            }
+
+            th, td {
+                padding: 10px 8px;
             }
         }
 
         @media (max-width: 480px) {
-            .stat-card,
-            .action-card {
-                padding: 1.5rem;
+            .stats-container {
+                grid-template-columns: 1fr;
             }
-            
-            .stat-number {
-                font-size: 2rem;
+
+            .main-content {
+                padding: 10px;
             }
-            
-            .btn-action {
-                padding: 10px 20px;
-                font-size: 14px;
+
+            .header h2 {
+                font-size: 1.5rem;
+            }
+
+            .stat-card {
+                padding: 20px;
+            }
+
+            .stat-value {
+                font-size: 1.8rem;
+            }
+
+            .modal-content {
+                border-radius: 8px;
+            }
+
+            .modal-header, .modal-body, .modal-footer {
+                padding: 15px;
+            }
+
+            .form-control, .form-select {
+                padding: 10px;
+                font-size: 16px; /* Empêche le zoom sur iOS */
             }
         }
 
-        /* Animation de chargement */
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+        /* Styles spécifiques pour les très petits écrans */
+        @media (max-width: 360px) {
+            .modal {
+                padding: 5px;
+            }
+
+            .modal-content {
+                max-width: 100%;
+                margin: 10px;
+            }
+
+            .stat-value {
+                font-size: 1.6rem;
+            }
+
+            .btn {
+                padding: 10px 15px;
+                font-size: 0.9rem;
+            }
         }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        /* Empêcher le body de scroll quand le modal est ouvert */
+        body.modal-open {
+            overflow: hidden;
+        }
+
+        /* Animation d'ouverture du modal */
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-content {
+            animation: modalSlideIn 0.3s ease-out;
         }
     </style>
 </head>
 <body>
-    <div class="dashboard-container">
-        <header class="admin-header">
-            <div class="header-content">
-                <h1>🎯 Tableau de Bord - <?php echo APP_NAME; ?></h1>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="logo">
+                <h1>Hôtel<span>Premium</span></h1>
+            </div>
+            <ul class="nav-links">
+                <li class="active">
+                    <a href="#"><i class="fas fa-tachometer-alt"></i> Tableau de bord</a>
+                </li>
+                <li>
+                    <a href="admin-chambres.html"><i class="fas fa-bed"></i> Chambres</a>
+                </li>
+                <li>
+                    <a href="admin-reservations.php"><i class="fas fa-calendar-check"></i> Réservations</a>
+                </li>
+                <li>
+                    <a href="#"><i class="fas fa-users"></i> Clients</a>
+                </li>
+                <li>
+                    <a href="#"><i class="fas fa-chart-bar"></i> Statistiques</a>
+                </li>
+                <li>
+                    <a href="#"><i class="fas fa-cog"></i> Paramètres</a>
+                </li>
+                <li>
+                    <a href="#"><i class="fas fa-sign-out-alt"></i> Déconnexion</a>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="header">
+                <h2>Tableau de Bord Administrateur</h2>
                 <div class="user-info">
-                    <span>Connecté en tant que <strong><?php echo htmlspecialchars($_SESSION['admin_username'] ?? 'Administrateur'); ?></strong></span>
-                    <span>Dernière connexion : <?php echo date('d/m/Y H:i', $_SESSION['login_time'] ?? time()); ?></span>
-                    <a href="logout.php" class="btn-logout">🚪 Déconnexion</a>
+                    <div class="user-avatar">AD</div>
+                    <span>Admin</span>
                 </div>
             </div>
-        </header>
 
-        <main class="dashboard-main">
-            <!-- Message d'erreur -->
+            <!-- Messages -->
+            <div class="error-message" id="error-message"></div>
+            <div class="success-message" id="success-message"></div>
+
             <?php if (isset($error)): ?>
-                <div class="error-message">
-                    <?php echo $error; ?>
+                <div class="error-message" style="display: block;">
+                    <?php echo htmlspecialchars($error); ?>
                 </div>
             <?php endif; ?>
 
-            <!-- Section de bienvenue -->
-            <section class="welcome-section">
-                <h1>Bienvenue dans votre espace d'administration</h1>
-                <p>Gérez efficacement votre hôtel grâce à ce tableau de bord complet</p>
-            </section>
-
-            <!-- Grille des statistiques -->
-            <section class="stats-grid">
-                <!-- Carte Réservations -->
+            <!-- Stats Cards -->
+            <div class="stats-container">
                 <div class="stat-card reservations">
-                    <div class="stat-icon">📅</div>
-                    <div class="stat-number"><?php echo $stats_reservations['total_reservations']; ?></div>
-                    <div class="stat-label">Réservations Total</div>
-                    <div class="stat-details">
-                        <div class="stat-detail">
-                            <span>Confirmées :</span>
-                            <span style="color: #27ae60;"><?php echo $stats_reservations['reservations_confirmees']; ?></span>
-                        </div>
-                        <div class="stat-detail">
-                            <span>En attente :</span>
-                            <span style="color: #f39c12;"><?php echo $stats_reservations['reservations_attente']; ?></span>
-                        </div>
-                        <div class="stat-detail">
-                            <span>Annulées :</span>
-                            <span style="color: #e74c3c;"><?php echo $stats_reservations['reservations_annulees']; ?></span>
-                        </div>
-                    </div>
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-value"><?php echo $stats['total_reservations']; ?></div>
+                    <div class="stat-label">Total Réservations</div>
                 </div>
-
-                <!-- Carte Clients -->
+                <div class="stat-card month-reservations">
+                    <div class="stat-icon">📅</div>
+                    <div class="stat-value"><?php echo $stats['month_reservations']; ?></div>
+                    <div class="stat-label">Réservations ce mois</div>
+                </div>
+                <div class="stat-card revenue">
+                    <div class="stat-icon">💰</div>
+                    <div class="stat-value"><?php echo number_format($stats['month_revenue'], 0, ',', ' '); ?> €</div>
+                    <div class="stat-label">Chiffre d'affaires mensuel</div>
+                </div>
                 <div class="stat-card clients">
                     <div class="stat-icon">👥</div>
-                    <div class="stat-number"><?php echo $stats_clients['total_clients']; ?></div>
-                    <div class="stat-label">Clients Inscrits</div>
-                    <div class="stat-details">
-                        <div class="stat-detail">
-                            <span>Base de données clients</span>
-                        </div>
-                    </div>
+                    <div class="stat-value"><?php echo $stats['total_clients']; ?></div>
+                    <div class="stat-label">Clients inscrits</div>
                 </div>
+            </div>
 
-                <!-- Carte Chambres -->
-                <div class="stat-card chambres">
-                    <div class="stat-icon">🏨</div>
-                    <div class="stat-number"><?php echo $stats_chambres['total_chambres']; ?></div>
-                    <div class="stat-label">Chambres Total</div>
-                    <div class="stat-details">
-                        <div class="stat-detail">
-                            <span>Disponibles :</span>
-                            <span style="color: #27ae60;"><?php echo $stats_chambres['chambres_disponibles']; ?></span>
-                        </div>
-                        <div class="stat-detail">
-                            <span>Occupées :</span>
-                            <span style="color: #e74c3c;"><?php echo $stats_chambres['total_chambres'] - $stats_chambres['chambres_disponibles']; ?></span>
-                        </div>
-                    </div>
+            <!-- Quick Actions -->
+            <div class="quick-actions">
+                <h3>Actions Rapides</h3>
+                <div class="action-buttons">
+                    <button class="btn btn-primary" onclick="showExportModal()">
+                        <i class="fas fa-download"></i>
+                        <span>Exporter les données</span>
+                    </button>
+                    <a href="admin-reservations.php" class="btn btn-success">
+                        <i class="fas fa-calendar-plus"></i>
+                        <span>Gérer les réservations</span>
+                    </a>
+                    <a href="admin-chambres.html" class="btn btn-warning">
+                        <i class="fas fa-bed"></i>
+                        <span>Gérer les chambres</span>
+                    </a>
                 </div>
+            </div>
 
-                <!-- Carte Revenus -->
-                <div class="stat-card revenus">
-                    <div class="stat-icon">💰</div>
-                    <div class="stat-number"><?php echo number_format($revenus['revenus_totaux'], 0, ',', ' '); ?>€</div>
-                    <div class="stat-label">Revenus Totaux</div>
-                    <div class="stat-details">
-                        <div class="stat-detail">
-                            <span>Réservations confirmées</span>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Grille des actions rapides -->
-            <section class="actions-grid">
-                <div class="action-card">
-                    <div class="action-icon">📋</div>
-                    <div class="action-title">Gestion des Réservations</div>
-                    <div class="action-description">
-                        Consultez, modifiez et gérez toutes les réservations de votre hôtel
-                    </div>
-                    <a href="admin-reservations.php" class="btn-action">Accéder aux Réservations</a>
-                </div>
-
-                <div class="action-card">
-                    <div class="action-icon">👥</div>
-                    <div class="action-title">Gestion des Clients</div>
-                    <div class="action-description">
-                        Gérez votre base de données clients et consultez leurs historiques
-                    </div>
-                    <a href="admin-clients.php" class="btn-action">Voir les Clients</a>
-                </div>
-
-                <div class="action-card">
-                    <div class="action-icon">🏨</div>
-                    <div class="action-title">Gestion des Chambres</div>
-                    <div class="action-description">
-                        Configurez les chambres, leurs disponibilités et leurs tarifs
-                    </div>
-                    <a href="admin-chambres.html" class="btn-action">Gérer les Chambres</a>
-                </div>
-
-                <div class="action-card">
-                    <div class="action-icon">📊</div>
-                    <div class="action-title">Rapports et Statistiques</div>
-                    <div class="action-description">
-                        Analysez les performances et générez des rapports détaillés
-                    </div>
-                    <a href="graphique-reservations.php" class="btn-action">Voir les Rapports</a>
-                </div>
-            </section>
-
-            <!-- Dernières réservations -->
-            <section class="recent-section">
+            <!-- Recent Reservations -->
+            <div class="recent-reservations">
                 <div class="section-header">
-                    <h2>📝 Dernières Réservations</h2>
-                    <a href="admin-reservations.php" class="view-all">Voir tout →</a>
+                    <h3>Réservations Récentes</h3>
+                    <a href="admin-reservations.php" class="btn btn-outline" style="text-decoration: none;">
+                        Voir tout
+                    </a>
                 </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Client</th>
+                            <th>Dates</th>
+                            <th>Chambres</th>
+                            <th>Statut</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($recentReservations)): ?>
+                            <tr>
+                                <td colspan="5" style="text-align: center; padding: 40px; color: var(--gray);">
+                                    Aucune réservation récente
+                                </td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach ($recentReservations as $reservation): ?>
+                                <tr>
+                                    <td><strong>#<?php echo $reservation['idReservation']; ?></strong></td>
+                                    <td>
+                                        <div><?php echo htmlspecialchars($reservation['prenom'] . ' ' . $reservation['nom']); ?></div>
+                                        <div style="font-size: 0.8rem; color: var(--gray);"><?php echo htmlspecialchars($reservation['email']); ?></div>
+                                    </td>
+                                    <td>
+                                        <div><?php echo date('d/m/Y', strtotime($reservation['date_arrivee'])); ?></div>
+                                        <div style="font-size: 0.8rem; color: var(--gray);">au <?php echo date('d/m/Y', strtotime($reservation['date_depart'])); ?></div>
+                                    </td>
+                                    <td>
+                                        <?php echo !empty($reservation['chambres']) ? $reservation['chambres'] : 'N/A'; ?>
+                                    </td>
+                                    <td>
+                                        <span class="status <?php echo str_replace(' ', '-', $reservation['etat_reservation']); ?>">
+                                            <?php echo $reservation['etat_reservation']; ?>
+                                        </span>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 
-                <div class="reservations-list">
-                    <?php if (empty($dernieres_reservations)): ?>
-                        <div style="text-align: center; padding: 2rem; color: #7f8c8d;">
-                            <div style="font-size: 3rem; margin-bottom: 1rem;">📭</div>
-                            <p>Aucune réservation récente</p>
+    <!-- Modal d'export -->
+    <div class="modal" id="export-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Exporter les données</h3>
+                <button class="close-btn" onclick="hideExportModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="export-form">
+                    <div class="form-group">
+                        <label for="export-type">Type de données à exporter</label>
+                        <select id="export-type" class="form-select" required>
+                            <option value="">Sélectionnez un type</option>
+                            <option value="reservations">Réservations</option>
+                            <option value="clients">Clients</option>
+                            <option value="chambres">Chambres</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="date-range-group" style="display: none;">
+                        <label for="start-date">Période (optionnel)</label>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <input type="date" id="start-date" class="form-control" placeholder="Date de début">
+                            <input type="date" id="end-date" class="form-control" placeholder="Date de fin">
                         </div>
-                    <?php else: ?>
-                        <?php foreach ($dernieres_reservations as $reservation): ?>
-                            <div class="reservation-item">
-                                <div class="reservation-id">#<?php echo $reservation['idReservation']; ?></div>
-                                <div class="reservation-client">
-                                    <?php echo htmlspecialchars($reservation['prenom'] . ' ' . $reservation['nom']); ?>
-                                </div>
-                                <div class="reservation-dates">
-                                    <?php echo date('d/m/Y', strtotime($reservation['date_arrivee'])); ?> - 
-                                    <?php echo date('d/m/Y', strtotime($reservation['date_depart'])); ?>
-                                </div>
-                                <div class="reservation-status status-<?php echo str_replace(' ', '-', $reservation['etat_reservation']); ?>">
-                                    <?php echo $reservation['etat_reservation']; ?>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </div>
-            </section>
-        </main>
+                        <small style="color: var(--gray); margin-top: 5px; display: block;">
+                            Laisser vide pour exporter toutes les données
+                        </small>
+                    </div>
+                    <div class="form-group">
+                        <label for="export-format">Format d'export</label>
+                        <select id="export-format" class="form-select" required>
+                            <option value="csv">CSV (Excel)</option>
+                            <option value="json">JSON</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="hideExportModal()">Annuler</button>
+                <button class="btn btn-primary" onclick="exportData()">
+                    <i class="fas fa-download"></i> Exporter
+                </button>
+            </div>
+        </div>
     </div>
 
     <script>
-        // Animation simple au chargement
-        document.addEventListener('DOMContentLoaded', function() {
-            const statCards = document.querySelectorAll('.stat-card');
-            const actionCards = document.querySelectorAll('.action-card');
+        // Gestion du modal d'export
+        function showExportModal() {
+            const modal = document.getElementById('export-modal');
+            modal.style.display = 'flex';
+            document.body.classList.add('modal-open');
             
-            // Animation des cartes de statistiques
-            statCards.forEach((card, index) => {
-                setTimeout(() => {
-                    card.style.opacity = '1';
-                    card.style.transform = 'translateY(0)';
-                }, index * 200);
-            });
-
-            // Animation des cartes d'action
-            actionCards.forEach((card, index) => {
-                setTimeout(() => {
-                    card.style.opacity = '1';
-                    card.style.transform = 'translateY(0)';
-                }, (index * 100) + 600);
-            });
-        });
-
-        // Initialisation des styles pour l'animation
-        document.querySelectorAll('.stat-card, .action-card').forEach(card => {
-            card.style.opacity = '0';
-            card.style.transform = 'translateY(20px)';
-            card.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
-        });
-    </script>
-
-<!-- Ajoutez cette section dans votre admin-interface.php -->
-
-<!-- Styles pour le modal d'export -->
-<style>
-.export-modal {
-    display: none;
-    position: fixed;
-    z-index: 1000;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0,0,0,0.5);
-}
-.export-modal-content {
-    background-color: white;
-    margin: 5% auto;
-    padding: 30px;
-    border-radius: 10px;
-    width: 80%;
-    max-width: 800px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-    position: relative;
-}
-.export-close {
-    position: absolute;
-    top: 15px;
-    right: 20px;
-    font-size: 28px;
-    cursor: pointer;
-    color: #aaa;
-    background: none;
-    border: none;
-}
-.export-close:hover {
-    color: #000;
-}
-.export-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 15px;
-    margin: 25px 0;
-}
-.export-card {
-    background: #f8f9fa;
-    padding: 20px;
-    border-radius: 8px;
-    text-align: center;
-    border: 2px solid #e9ecef;
-    transition: all 0.3s ease;
-}
-.export-card:hover {
-    border-color: #007bff;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-}
-.export-card-btn {
-    display: block;
-    width: 100%;
-    padding: 12px;
-    background: #28a745;
-    color: white;
-    text-decoration: none;
-    border-radius: 5px;
-    border: none;
-    cursor: pointer;
-    font-size: 14px;
-    margin-top: 10px;
-    transition: background 0.3s ease;
-}
-.export-card-btn:hover {
-    background: #218838;
-}
-.export-info {
-    background: #e7f3ff;
-    padding: 15px;
-    border-radius: 5px;
-    margin-top: 20px;
-    border-left: 4px solid #007bff;
-}
-.export-section {
-    margin: 20px 0;
-    padding: 20px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border-radius: 10px;
-}
-.export-main-btn {
-    background: white;
-    color: #667eea;
-    border: none;
-    padding: 12px 24px;
-    border-radius: 5px;
-    margin-top: 10px;
-    cursor: pointer;
-    font-weight: bold;
-    font-size: 16px;
-    transition: transform 0.2s ease;
-}
-.export-main-btn:hover {
-    transform: scale(1.05);
-}
-</style>
-
-<!-- Section d'export dans l'interface admin -->
-<div class="export-section">
-    <h3 style="margin: 0; font-size: 24px;">📊 Export des données CSV</h3>
-    <p style="margin: 10px 0 0 0; opacity: 0.9; font-size: 16px;">Exportez toutes les données de l'hôtel en format CSV</p>
-    <button onclick="openExportModal()" class="export-main-btn">
-        📥 Ouvrir l'export CSV
-    </button>
-</div>
-
-<!-- Modal d'export -->
-<div id="exportModal" class="export-modal">
-    <div class="export-modal-content">
-        <button class="export-close" onclick="closeExportModal()">&times;</button>
-        <h2 style="color: #333; margin-bottom: 10px; text-align: center;">📊 Export des données CSV</h2>
-        <p style="text-align: center; color: #666; margin-bottom: 20px;">Sélectionnez les données à exporter</p>
-        
-        <div class="export-grid">
-            <div class="export-card">
-                <h4 style="margin: 0 0 10px 0; color: #333;">👥 Clients</h4>
-                <p style="margin: 0; color: #666; font-size: 14px;">Liste de tous les clients</p>
-                <button class="export-card-btn" onclick="exportTable('clients')">
-                    📥 Télécharger
-                </button>
-            </div>
-            
-            <div class="export-card">
-                <h4 style="margin: 0 0 10px 0; color: #333;">🛏️ Chambres</h4>
-                <p style="margin: 0; color: #666; font-size: 14px;">Inventaire des chambres</p>
-                <button class="export-card-btn" onclick="exportTable('chambres')">
-                    📥 Télécharger
-                </button>
-            </div>
-            
-            <div class="export-card">
-                <h4 style="margin: 0 0 10px 0; color: #333;">📅 Réservations</h4>
-                <p style="margin: 0; color: #666; font-size: 14px;">Historique des réservations</p>
-                <button class="export-card-btn" onclick="exportTable('reservations')">
-                    📥 Télécharger
-                </button>
-            </div>
-            
-            <div class="export-card">
-                <h4 style="margin: 0 0 10px 0; color: #333;">💰 Paiements</h4>
-                <p style="margin: 0; color: #666; font-size: 14px;">Transactions et paiements</p>
-                <button class="export-card-btn" onclick="exportTable('paiements')">
-                    📥 Télécharger
-                </button>
-            </div>
-            
-            <div class="export-card">
-                <h4 style="margin: 0 0 10px 0; color: #333;">🔗 Réservation Chambres</h4>
-                <p style="margin: 0; color: #666; font-size: 14px;">Liens réservations-chambres</p>
-                <button class="export-card-btn" onclick="exportTable('reservation_chambres')">
-                    📥 Télécharger
-                </button>
-            </div>
-        </div>
-        
-        <div class="export-info">
-            <h4 style="margin: 0 0 10px 0; color: #007bff;">💡 Comment utiliser</h4>
-            <p style="margin: 5px 0; font-size: 14px;">• Cliquez sur un bouton pour télécharger le CSV</p>
-            <p style="margin: 5px 0; font-size: 14px;">• Le fichier sera sauvegardé dans votre dossier <strong>Téléchargements</strong></p>
-            <p style="margin: 5px 0; font-size: 14px;">• Le fichier s'ouvre directement dans Excel/LibreOffice</p>
-        </div>
-        
-        <div style="text-align: center; margin-top: 20px;">
-            <button onclick="closeExportModal()" style="background: #6c757d; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
-                Fermer
-            </button>
-        </div>
-    </div>
-</div>
-
-<script>
-// Fonctions pour gérer le modal d'export
-function openExportModal() {
-    document.getElementById('exportModal').style.display = 'block';
-}
-
-function closeExportModal() {
-    document.getElementById('exportModal').style.display = 'none';
-}
-
-function exportTable(tableName) {
-    // Ouvrir le téléchargement direct dans un nouvel onglet
-    const url = `../hotel/hotel-csv-export/public/download.php?table=${tableName}`;
-    window.open(url, '_blank');
-    
-    // Afficher un message de confirmation
-    showExportMessage(`📥 Téléchargement de ${tableName} en cours...`);
-    
-    // Fermer le modal après un court délai
-    setTimeout(() => {
-        closeExportModal();
-    }, 1500);
-}
-
-function showExportMessage(message) {
-    // Créer un message temporaire
-    const messageDiv = document.createElement('div');
-    messageDiv.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: #28a745;
-        color: white;
-        padding: 15px 20px;
-        border-radius: 5px;
-        z-index: 1001;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-        font-size: 14px;
-    `;
-    messageDiv.textContent = message;
-    document.body.appendChild(messageDiv);
-    
-    // Supprimer après 3 secondes
-    setTimeout(() => {
-        if (document.body.contains(messageDiv)) {
-            document.body.removeChild(messageDiv);
+            // Reset du formulaire
+            document.getElementById('export-form').reset();
+            document.getElementById('date-range-group').style.display = 'none';
         }
-    }, 3000);
-}
 
-// Fermer le modal en cliquant à l'extérieur
-window.onclick = function(event) {
-    const modal = document.getElementById('exportModal');
-    if (event.target === modal) {
-        closeExportModal();
-    }
-}
+        function hideExportModal() {
+            const modal = document.getElementById('export-modal');
+            modal.style.display = 'none';
+            document.body.classList.remove('modal-open');
+        }
 
-// Fermer avec la touche Echap
-document.addEventListener('keydown', function(event) {
-    if (event.key === 'Escape') {
-        closeExportModal();
-    }
-});
-</script>
+        // Afficher/masquer la période selon le type d'export
+        document.getElementById('export-type').addEventListener('change', function() {
+            const dateRangeGroup = document.getElementById('date-range-group');
+            if (this.value === 'reservations') {
+                dateRangeGroup.style.display = 'block';
+            } else {
+                dateRangeGroup.style.display = 'none';
+            }
+        });
 
+        // Fonction d'export
+        function exportData() {
+            const exportType = document.getElementById('export-type').value;
+            const exportFormat = document.getElementById('export-format').value;
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
 
+            if (!exportType) {
+                showError('Veuillez sélectionner un type de données à exporter');
+                return;
+            }
+
+            // Construction de l'URL
+            let url = `export-data.php?type=${exportType}&format=${exportFormat}`;
+            if (startDate && endDate) {
+                url += `&start_date=${startDate}&end_date=${endDate}`;
+            }
+
+            // Ouvrir dans un nouvel onglet pour le téléchargement
+            window.open(url, '_blank');
+            hideExportModal();
+            showSuccess('Export lancé avec succès');
+        }
+
+        // Fonctions utilitaires pour les messages
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('success-message');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => {
+                successDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        // Fermer le modal en cliquant à l'extérieur
+        document.getElementById('export-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                hideExportModal();
+            }
+        });
+
+        // Fermer le modal avec la touche Échap
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                hideExportModal();
+            }
+        });
+
+        // Empêcher la fermeture accidentelle sur mobile
+        document.addEventListener('touchstart', function(e) {
+            const modal = document.getElementById('export-modal');
+            if (modal.style.display === 'flex' && !modal.contains(e.target)) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+    </script>
 </body>
 </html>
