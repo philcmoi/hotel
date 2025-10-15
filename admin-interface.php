@@ -553,7 +553,7 @@ try {
                     <div class="action-description">
                         Analysez les performances et générez des rapports détaillés
                     </div>
-                    <a href="admin-rapports.php" class="btn-action">Voir les Rapports</a>
+                    <a href="graphique-reservations.php" class="btn-action">Voir les Rapports</a>
                 </div>
             </section>
 
