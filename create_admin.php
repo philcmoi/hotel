@@ -36,15 +36,15 @@ try {
     $conn->exec("DELETE FROM users WHERE username = 'admin'");
     
     // Créer le mot de passe hashé
-    $password_hash = password_hash('L099339R', PASSWORD_DEFAULT);
+    $password_hash = password_hash('007', PASSWORD_DEFAULT);
     
     // Insérer le nouvel admin
     $stmt = $conn->prepare("INSERT INTO users (username, password, email, role) VALUES (?, ?, ?, ?)");
     $stmt->execute(['admin', $password_hash, 'admin@hotel.com', 'admin']);
     
     echo "✅ Utilisateur admin créé avec succès!<br>";
-    echo "Nom d'utilisateur: <strong>admin</strong><br>";
-    echo "Mot de passe: <strong>L099339R</strong><br>";
+    echo "Nom d'utilisateur: <strong></strong><br>";
+    echo "Mot de passe: <strong></strong><br>";
     echo "Hash utilisé: " . $password_hash . "<br>";
     
     // Vérifier que ça fonctionne
@@ -52,7 +52,7 @@ try {
     $verify->execute();
     $user = $verify->fetch(PDO::FETCH_ASSOC);
     
-    if ($user && password_verify('L099339R', $user['password'])) {
+    if ($user && password_verify('007', $user['password'])) {
         echo "✅ Vérification: Le mot de passe fonctionne!";
     } else {
         echo "❌ Vérification: Le mot de passe ne fonctionne pas";

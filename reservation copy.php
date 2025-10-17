@@ -16,14 +16,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     exit();
 }
 
-// Inclure la configuration
-require_once 'config.php';
-
 class Database {
-    private $host = DB_HOST;
-    private $db_name = DB_NAME;
-    private $username = DB_USER;
-    private $password = DB_PASS;
+    private $host = "localhost";
+    private $db_name = "hotel";
+    private $username = "root";
+    private $password = "";
     public $conn;
 
     public function getConnection() {
@@ -172,7 +169,7 @@ class ReservationSystem {
         return true;
     }
 
-    public function createReservation($data) {
+        public function createReservation($data) {
         try {
             error_log("Début de la création de réservation");
             $this->conn->beginTransaction();
@@ -197,11 +194,10 @@ class ReservationSystem {
                     $prix_chambre = $chambre['prix_nuit'] * $nights;
                     $prix_total += $prix_chambre;
                     $chambres_details[] = [
-                        'idChambre' => $chambre_id,
-                        'numeroChambre' => $chambre['numeroChambre'],
-                        'type_chambre' => $chambre['type_chambre'],
+                        'id' => $chambre_id,
+                        'numero' => $chambre['numeroChambre'],
+                        'type' => $chambre['type_chambre'],
                         'prix_nuit' => $chambre['prix_nuit'],
-                        'capacite' => $chambre['capacite'],
                         'prix_total' => $prix_chambre
                     ];
                     error_log("Chambre $chambre_id: " . $chambre['prix_nuit'] . "€/nuit -> " . $prix_chambre . "€ pour $nights nuits");
@@ -253,10 +249,10 @@ class ReservationSystem {
             $this->conn->commit();
             error_log("Transaction commitée");
 
-            // ENVOYER L'EMAIL DE CONFIRMATION AUTOMATIQUE
-            error_log("Envoi de l'email de confirmation automatique");
-            $email_sent = $this->sendAutomaticConfirmationEmail($reservation_id, $data, $chambres_details);
-            error_log("Email automatique envoyé: " . ($email_sent ? 'oui' : 'non'));
+            // Envoyer l'email de confirmation via le fichier séparé
+            error_log("Envoi de l'email de confirmation");
+            $email_sent = $this->sendConfirmationEmail($reservation_id, $data['email']);
+            error_log("Email envoyé: " . ($email_sent ? 'oui' : 'non'));
 
             error_log("Réservation créée avec succès: ID $reservation_id, Chambres: " . implode(', ', $data['chambres']) . ", Email envoyé: " . ($email_sent ? 'Oui' : 'Non'));
 
@@ -264,9 +260,6 @@ class ReservationSystem {
                 'success' => true, 
                 'reservation_id' => $reservation_id,
                 'email_sent' => $email_sent,
-                'message' => $email_sent ? 
-                    'Réservation créée et email de confirmation envoyé' : 
-                    'Réservation créée mais échec envoi email',
                 'details' => [
                     'nights' => $nights,
                     'total_price' => $prix_total,
@@ -282,46 +275,61 @@ class ReservationSystem {
         }
     }
 
-    private function sendAutomaticConfirmationEmail($reservation_id, $data, $chambres_details) {
+    private function sendConfirmationEmail($reservation_id, $client_email) {
         try {
-            require_once 'ReservationMailer.php';
+            // Inclure et utiliser le fichier d'envoi d'email séparé
+            require_once 'envoi-email.php';
             
-            // Préparer les données pour l'email
-            $emailData = [
-                'idReservation' => $reservation_id,
-                'prenom' => $data['prenom'],
-                'nom' => $data['nom'],
-                'email' => $data['email'],
-                'date_arrivee' => $data['date_arrivee'],
-                'date_depart' => $data['date_depart'],
-                'nombre_personnes' => $data['nombre_personnes'],
-                'prix_total' => $this->calculateTotalPrice($data['chambres'], $data['date_arrivee'], $data['date_depart']),
-                'chambres_details' => $chambres_details
-            ];
-            
-            // Envoyer l'email
-            $mailer = new ReservationMailer();
-            return $mailer->sendConfirmationEmail($emailData, $this->conn);
+            $emailSender = new EmailSender();
+            return $emailSender->sendReservationConfirmation($reservation_id, $client_email, $this->conn);
             
         } catch (Exception $e) {
-            error_log("Erreur lors de l'envoi de l'email automatique: " . $e->getMessage());
+            error_log("Erreur lors de l'envoi de l'email de confirmation: " . $e->getMessage());
             return false;
         }
     }
 
-    private function calculateTotalPrice($chambres, $date_arrivee, $date_depart) {
-        $arrivee = new DateTime($date_arrivee);
-        $depart = new DateTime($date_depart);
-        $nights = $depart->diff($arrivee)->days;
-        
-        $total = 0;
-        foreach ($chambres as $chambre_id) {
-            $chambre = $this->getChambreById($chambre_id);
-            if ($chambre) {
-                $total += $chambre['prix_nuit'] * $nights;
+    private function getReservationDetails($reservation_id) {
+        try {
+            // Récupérer les informations de base de la réservation et du client
+            $query = "SELECT r.*, cl.nom, cl.prenom, cl.email, cl.telephone 
+                      FROM " . $this->table_reservations . " r
+                      INNER JOIN " . $this->table_clients . " cl ON r.idClient = cl.idClient
+                      WHERE r.idReservation = :reservation_id";
+            
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([':reservation_id' => $reservation_id]);
+            $reservation = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$reservation) {
+                return null;
             }
+
+            // Récupérer les chambres de la réservation
+            $chambres_query = "SELECT c.* 
+                              FROM " . $this->table_chambres . " c
+                              INNER JOIN " . $this->table_reservation_chambres . " rc ON c.idChambre = rc.idChambre
+                              WHERE rc.idReservation = :reservation_id";
+            
+            $chambres_stmt = $this->conn->prepare($chambres_query);
+            $chambres_stmt->execute([':reservation_id' => $reservation_id]);
+            $chambres = $chambres_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            return [
+                'reservation' => $reservation,
+                'client' => [
+                    'nom' => $reservation['nom'],
+                    'prenom' => $reservation['prenom'],
+                    'email' => $reservation['email'],
+                    'telephone' => $reservation['telephone']
+                ],
+                'chambres' => $chambres
+            ];
+            
+        } catch (Exception $e) {
+            error_log("Erreur getReservationDetails: " . $e->getMessage());
+            return null;
         }
-        return $total;
     }
 
     private function findOrCreateClient($data) {
