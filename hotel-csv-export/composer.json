@@ -1,0 +1,20 @@
+{
+    "name": "hotel/hotel-csv-export",
+    "description": "Système d'export CSV pour la gestion hôtelière",
+    "type": "project",
+    "require": {
+        "php": "^8.0",
+        "ext-pdo": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "HotelExport\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "LOR",
+            "email": "lhpp.philippe@gmail.com"
+        }
+    ]
+}
