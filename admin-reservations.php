@@ -1,5 +1,5 @@
 <?php
-// admin-reservations.php - VERSION COMPLÈTE AVEC API ET INTERFACE
+// admin-reservations.php - VERSION COMPLÈTE AVEC API ET INTERFACE AVEC EMAILS
 
 // Activer l'affichage des erreurs pour le débogage
 ini_set('display_errors', 1);
@@ -147,7 +147,7 @@ class AdminReservations {
         ];
     }
 
-    // Mettre à jour le statut d'une réservation
+    // Mettre à jour le statut d'une réservation AVEC EMAIL
     public function updateReservationStatus($reservationId, $status) {
         $allowedStatus = ['confirme', 'en attente', 'annulee'];
         if (!in_array($status, $allowedStatus)) {
@@ -162,14 +162,62 @@ class AdminReservations {
         $result = $stmt->execute();
         
         if ($result && $stmt->rowCount() > 0) {
+            // ENVOYER UN EMAIL SI LA RÉSERVATION EST CONFIRMÉE PAR L'ADMIN
+            if ($status === 'confirme') {
+                $this->sendAdminConfirmationEmail($reservationId);
+            }
+            
             return [
                 'success' => true,
-                'message' => 'Statut mis à jour avec succès',
+                'message' => 'Statut mis à jour avec succès' . ($status === 'confirme' ? ' et email envoyé au client' : ''),
                 'reservation_id' => $reservationId,
                 'new_status' => $status
             ];
         } else {
             throw new Exception("Aucune réservation trouvée avec cet ID ou statut identique");
+        }
+    }
+
+    // Envoyer un email de confirmation quand l'admin confirme une réservation
+    private function sendAdminConfirmationEmail($reservationId) {
+        try {
+            require_once 'ReservationMailer.php';
+            
+            // Récupérer les données complètes de la réservation
+            $reservation = $this->getReservationDetails($reservationId);
+            
+            if (!$reservation) {
+                error_log("Réservation non trouvée pour l'email: #" . $reservationId);
+                return false;
+            }
+            
+            // Préparer les données pour l'email
+            $emailData = [
+                'idReservation' => $reservationId,
+                'prenom' => $reservation['prenom'],
+                'nom' => $reservation['nom'],
+                'email' => $reservation['email'],
+                'date_arrivee' => $reservation['date_arrivee'],
+                'date_depart' => $reservation['date_depart'],
+                'nombre_personnes' => $reservation['nombre_personnes'],
+                'prix_total' => $reservation['prix_total']
+            ];
+            
+            // Envoyer l'email
+            $mailer = new ReservationMailer();
+            $emailSent = $mailer->sendConfirmationEmail($emailData, $this->conn);
+            
+            if ($emailSent) {
+                error_log("Email de confirmation admin envoyé pour réservation #$reservationId à " . $reservation['email']);
+            } else {
+                error_log("Échec envoi email confirmation admin pour réservation #$reservationId");
+            }
+            
+            return $emailSent;
+            
+        } catch (Exception $e) {
+            error_log("Erreur envoi email confirmation admin: " . $e->getMessage());
+            return false;
         }
     }
 
@@ -562,59 +610,51 @@ try {
         }
 
         .status-badge {
-            padding: 4px 8px;
-            border-radius: 12px;
+            padding: 8px 12px;
+            border-radius: 20px;
             font-size: 12px;
             font-weight: 500;
-        }
-
-        .status-confirme { background: #d4edda; color: #155724; }
-        .status-en-attente { background: #fff3cd; color: #856404; }
-        .status-annulee { background: #f8d7da; color: #721c24; }
-
-        /* Menu déroulant pour le statut */
-        .status-select {
-            padding: 6px 10px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 14px;
-            background: white;
             cursor: pointer;
-            min-width: 140px;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+            display: inline-block;
+            min-width: 100px;
+            text-align: center;
         }
 
-        .status-select:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+        .status-badge:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            border-color: currentColor;
         }
 
-        /* Bouton d'action */
-        .action-btn {
-            padding: 6px 12px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            margin-left: 5px;
+        .status-badge:active {
+            transform: translateY(0);
         }
 
-        .btn-update {
-            background: #28a745;
-            color: white;
+        .status-confirme { 
+            background: #d4edda; 
+            color: #155724; 
+        }
+        .status-en-attente { 
+            background: #fff3cd; 
+            color: #856404; 
+        }
+        .status-annulee { 
+            background: #f8d7da; 
+            color: #721c24; 
         }
 
-        .btn-update:hover {
-            background: #218838;
+        .status-badge.loading {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
 
-        .btn-cancel {
-            background: #dc3545;
-            color: white;
-        }
-
-        .btn-cancel:hover {
-            background: #c82333;
+        /* Feedback de mise à jour */
+        .status-update-feedback {
+            font-size: 12px;
+            margin-top: 5px;
+            font-weight: 500;
         }
 
         /* Pagination */
@@ -672,8 +712,9 @@ try {
                 font-size: 14px;
             }
             
-            .status-select {
-                min-width: 120px;
+            .status-badge {
+                min-width: 80px;
+                padding: 6px 10px;
             }
         }
     </style>
@@ -753,14 +794,13 @@ try {
                             <th>Personnes</th>
                             <th>Prix</th>
                             <th>Statut</th>
-                            <th>Actions</th>
                             <th>Date Réservation</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($reservations)): ?>
                             <tr>
-                                <td colspan="9" style="text-align: center; padding: 40px; color: #6c757d;">
+                                <td colspan="8" style="text-align: center; padding: 40px; color: #6c757d;">
                                     <div style="font-size: 48px; margin-bottom: 15px;">📭</div>
                                     <p>Aucune réservation trouvée</p>
                                     <?php if (!empty($search) || $status !== 'all'): ?>
@@ -791,19 +831,13 @@ try {
                                     <td><?php echo $reservation['nombre_personnes']; ?></td>
                                     <td><strong><?php echo $reservation['prix_total']; ?>€</strong></td>
                                     <td>
-                                        <span class="status-badge status-<?php echo str_replace(' ', '-', $reservation['etat_reservation']); ?>" id="status-badge-<?php echo $reservation['idReservation']; ?>">
+                                        <span class="status-badge status-<?php echo str_replace(' ', '-', $reservation['etat_reservation']); ?>" 
+                                              id="status-badge-<?php echo $reservation['idReservation']; ?>"
+                                              onclick="changeReservationStatus(<?php echo $reservation['idReservation']; ?>, '<?php echo $reservation['etat_reservation']; ?>')"
+                                              title="Cliquer pour modifier le statut">
                                             <?php echo $reservation['etat_reservation']; ?>
                                         </span>
-                                    </td>
-                                    <td>
-                                        <select class="status-select" id="status-select-<?php echo $reservation['idReservation']; ?>" data-current-status="<?php echo $reservation['etat_reservation']; ?>">
-                                            <option value="confirme" <?php echo $reservation['etat_reservation'] === 'confirme' ? 'selected' : ''; ?>>Confirmée</option>
-                                            <option value="en attente" <?php echo $reservation['etat_reservation'] === 'en attente' ? 'selected' : ''; ?>>En attente</option>
-                                            <option value="annulee" <?php echo $reservation['etat_reservation'] === 'annulee' ? 'selected' : ''; ?>>Annulée</option>
-                                        </select>
-                                        <button class="action-btn btn-update" onclick="updateReservationStatus(<?php echo $reservation['idReservation']; ?>)">
-                                            💾
-                                        </button>
+                                        <div class="status-update-feedback" id="feedback-<?php echo $reservation['idReservation']; ?>" style="display: none;"></div>
                                     </td>
                                     <td>
                                         <div><?php echo date('d/m/Y', strtotime($reservation['date_reservation'])); ?></div>
@@ -838,22 +872,41 @@ try {
     </div>
 
     <script>
-        // Fonction pour mettre à jour le statut d'une réservation
-        async function updateReservationStatus(reservationId) {
-            const selectElement = document.getElementById('status-select-' + reservationId);
-            const newStatus = selectElement.value;
-            const currentStatus = selectElement.dataset.currentStatus;
+        // Fonction pour déterminer le prochain statut
+        function getNextStatus(currentStatus) {
+            const statusFlow = {
+                'en attente': 'confirme',
+                'confirme': 'annulee', 
+                'annulee': 'en attente'
+            };
+            return statusFlow[currentStatus] || 'en attente';
+        }
+
+        // Fonction pour changer le statut d'une réservation
+        async function changeReservationStatus(reservationId, currentStatus) {
+            const newStatus = getNextStatus(currentStatus);
+            const statusBadge = document.getElementById('status-badge-' + reservationId);
+            const feedbackElement = document.getElementById('feedback-' + reservationId);
+
+            // Vérifications de confirmation
+            if (newStatus === 'annulee') {
+                if (!confirm('⚠️ Êtes-vous sûr de vouloir annuler cette réservation ? Cette action est irréversible.')) {
+                    return;
+                }
+            }
             
-            if (newStatus === currentStatus) {
-                alert('Le statut est déjà défini sur "' + newStatus + '"');
-                return;
+            if (newStatus === 'confirme' && currentStatus === 'en attente') {
+                if (!confirm('✅ Confirmer cette réservation ? Un email de confirmation sera envoyé au client.')) {
+                    return;
+                }
             }
 
-            if (!confirm(`Êtes-vous sûr de vouloir changer le statut de la réservation #${reservationId} de "${currentStatus}" à "${newStatus}" ?`)) {
-                // Remettre l'ancienne valeur si annulation
-                selectElement.value = currentStatus;
-                return;
-            }
+            // Afficher un indicateur de chargement
+            statusBadge.classList.add('loading');
+            statusBadge.textContent = '🔄...';
+            feedbackElement.innerHTML = 'Mise à jour en cours...';
+            feedbackElement.style.display = 'block';
+            feedbackElement.style.color = '#666';
 
             try {
                 const response = await fetch('admin-reservations.php', {
@@ -872,46 +925,71 @@ try {
 
                 if (result.success) {
                     // Mettre à jour l'affichage du statut
-                    const statusBadge = document.getElementById('status-badge-' + reservationId);
                     statusBadge.textContent = newStatus;
                     statusBadge.className = 'status-badge status-' + newStatus.replace(' ', '-');
-                    
-                    // Mettre à jour le statut courant
-                    selectElement.dataset.currentStatus = newStatus;
+                    statusBadge.setAttribute('onclick', `changeReservationStatus(${reservationId}, '${newStatus}')`);
                     
                     // Afficher un message de succès
-                    alert(result.message);
+                    feedbackElement.innerHTML = '✅ ' + result.message;
+                    feedbackElement.style.color = '#28a745';
                     
-                    // Recharger les statistiques (optionnel)
+                    // Masquer le feedback après 3 secondes
                     setTimeout(() => {
-                        location.reload();
-                    }, 1000);
+                        feedbackElement.style.display = 'none';
+                    }, 3000);
+
+                    // Mettre à jour les statistiques en temps réel
+                    updateStatsDisplay();
+
                 } else {
-                    alert('Erreur: ' + result.error);
+                    feedbackElement.innerHTML = '❌ Erreur: ' + result.error;
+                    feedbackElement.style.color = '#dc3545';
                     // Remettre l'ancien statut en cas d'erreur
-                    selectElement.value = currentStatus;
+                    statusBadge.textContent = currentStatus;
+                    statusBadge.className = 'status-badge status-' + currentStatus.replace(' ', '-');
+                    
+                    // Masquer le feedback après 3 secondes
+                    setTimeout(() => {
+                        feedbackElement.style.display = 'none';
+                    }, 3000);
                 }
             } catch (error) {
                 console.error('Erreur:', error);
-                alert('Erreur lors de la mise à jour du statut');
+                feedbackElement.innerHTML = '❌ Erreur de connexion';
+                feedbackElement.style.color = '#dc3545';
                 // Remettre l'ancien statut en cas d'erreur
-                selectElement.value = currentStatus;
+                statusBadge.textContent = currentStatus;
+                statusBadge.className = 'status-badge status-' + currentStatus.replace(' ', '-');
+                
+                // Masquer le feedback après 3 secondes
+                setTimeout(() => {
+                    feedbackElement.style.display = 'none';
+                }, 3000);
+            } finally {
+                statusBadge.classList.remove('loading');
             }
         }
 
-        // Mettre à jour automatiquement le statut lors du changement (optionnel)
-        document.addEventListener('DOMContentLoaded', function() {
-            // Si vous voulez que le changement soit automatique sans bouton, décommentez ce code
-            /*
-            const statusSelects = document.querySelectorAll('.status-select');
-            statusSelects.forEach(select => {
-                select.addEventListener('change', function() {
-                    const reservationId = this.id.replace('status-select-', '');
-                    updateReservationStatus(reservationId);
-                });
-            });
-            */
-        });
+        // Fonction pour mettre à jour l'affichage des statistiques
+        async function updateStatsDisplay() {
+            try {
+                const response = await fetch('admin-reservations.php?api=1&action=get_stats');
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Mettre à jour les cartes de statistiques
+                    const statCards = document.querySelectorAll('.stat-number');
+                    if (statCards.length >= 4) {
+                        statCards[0].textContent = result.data.total || 0;
+                        statCards[1].textContent = result.data.confirmed || 0;
+                        statCards[2].textContent = result.data.pending || 0;
+                        statCards[3].textContent = result.data.cancelled || 0;
+                    }
+                }
+            } catch (error) {
+                console.error('Erreur lors de la mise à jour des stats:', error);
+            }
+        }
     </script>
 </body>
 </html>

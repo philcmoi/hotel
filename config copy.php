@@ -1,21 +1,19 @@
 <?php
-class Database {
-    private $host = 'localhost';
-    private $db_name = 'hotel';
-    private $username = 'root';
-    private $password = '';
-    public $conn;
+// config.php - FICHIER DE CONFIGURATION SEULEMENT
 
-    public function getConnection() {
-        $this->conn = null;
-        try {
-            $this->conn = new PDO("mysql:host=" . $this->host . ";dbname=" . $this->db_name, $this->username, $this->password);
-            $this->conn->exec("set names utf8");
-            $this->conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        } catch(PDOException $exception) {
-            echo "Connection error: " . $exception->getMessage();
-        }
-        return $this->conn;
-    }
+// Configuration de la session - AVANT session_start()
+if (session_status() === PHP_SESSION_NONE) {
+    ini_set('session.cookie_httponly', 1);
+    ini_set('session.cookie_secure', 0);
+    ini_set('session.use_strict_mode', 1);
+    ini_set('session.cookie_samesite', 'Lax');
 }
+
+// Configuration de la base de données
+define('DB_HOST', 'localhost');
+define('DB_NAME', 'hotel');
+define('DB_USER', 'root');
+define('DB_PASS', '');
+define('APP_NAME', 'Hôtel Premium');
+// NE PAS METTRE DE CODE DE CONNEXION OU AUTHENTIFICATION ICI
 ?>
